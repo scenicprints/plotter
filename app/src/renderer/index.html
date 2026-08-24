@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
+<title>Plotter</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 18.5 9 13.4 20a1.6 1.6 0 0 1-2.8 0L5.5 9z" stroke-linejoin="round"/><circle cx="12" cy="9.4" r="1.9" fill="currentColor" stroke="none"/></svg>
+      Plotter <small>1.0</small>
+    </div>
+    <div class="spacer"></div>
+    <div class="chip click" id="connChip"><i class="dot" id="connDot"></i> <b id="connName">not connected</b> <span id="connState"></span></div>
+    <div class="chip pos" id="posChip">X <b id="posX">--</b> &nbsp;Y <b id="posY">--</b> &nbsp;Z <b id="posZ">--</b></div>
+  </div>
+
+  <div class="body">
+    <div class="rail">
+      <button class="rtab on" data-tab="plot" title="Plot">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 18.5 9 13.4 20a1.6 1.6 0 0 1-2.8 0L5.5 9z" stroke-linejoin="round"/></svg>
+        <i class="tip">Plot</i></button>
+      <button class="rtab" data-tab="machine" title="Machine">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h9M17 17h3"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></svg>
+        <i class="tip">Machine</i></button>
+      <button class="rtab" data-tab="settings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M4.5 4.5l1.7 1.7M17.8 17.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.5 19.5l1.7-1.7M17.8 6.2l1.7-1.7"/></svg>
+        <i class="tip">Settings</i></button>
+      <button class="estop" id="estop" title="Emergency stop">STOP</button>
+    </div>
+
+    <div class="main">
+      <!-- ============ LEFT: PLOT ============ -->
+      <div class="left" id="tab-plot">
+
+        <div class="banner hide" id="restoreBanner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 12a8.5 8.5 0 1 1 2.6 6.1"/><path d="M3 19v-5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="t"><b>The machine lost its setup</b><span id="restoreText"></span></div>
+          <button class="rbtn" id="restoreBtn">Restore corner</button>
+        </div>
+
+        <div class="banner bad hide" id="alertBanner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8.5v5M12 16.8v.4" stroke-linecap="round"/><circle cx="12" cy="12" r="9"/></svg>
+          <div class="t"><b id="alertTitle">Problem</b><span id="alertText"></span></div>
+        </div>
+
+        <!-- STEP 1 -->
+        <div class="card acc1" id="card1">
+          <button class="chead" data-open="1">
+            <span class="num" id="num1">1</span><span class="ctitle">Writing height</span>
+            <span class="cval" id="val1">not set</span>
+          </button>
+          <div class="cbody">
+            <div class="hint">Jog down until the pen writes with the carriage <em>floating off its stop</em>, then lock. Z0 becomes the floor, and nothing can drive lower.</div>
+            <div class="readout">
+              <div class="ro key"><span>Z position</span><b id="zPos">--</b></div>
+              <div class="ro"><span>Carriage float</span><b id="zFloat">--</b></div>
+              <div class="ro"><span>Lift</span><b id="zLift">--</b></div>
+            </div>
+            <div class="jogrow">
+              <div class="zcol">
+                <button class="zb" data-zjog="1">▲ up</button>
+                <button class="zb" data-zjog="-1">▼ down</button>
+              </div>
+              <div class="grow">
+                <p class="steplbl">Step (mm)</p>
+                <div class="chips" id="zSteps">
+                  <button class="sc" data-v="0.05">0.05</button>
+                  <button class="sc on" data-v="0.1">0.1</button>
+                  <button class="sc" data-v="0.5">0.5</button>
+                  <button class="sc" data-v="1">1</button>
+                  <button class="sc" data-v="5">5</button>
+                </div>
+              </div>
+            </div>
+            <div class="brow">
+              <button class="btn gho" id="zRoom">Give Z room</button>
+              <button class="btn gho" id="penDown">Pen down</button>
+              <button class="btn gho" id="penUp">Pen up</button>
+            </div>
+            <div class="brow">
+              <button class="btn pri grow" id="lockZ">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7a3.5 3.5 0 0 1 7 0v3.5"/></svg>
+                Lock Z0 here</button>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="card acc2" id="card2">
+          <button class="chead" data-open="2">
+            <span class="num" id="num2">2</span><span class="ctitle">Card position</span>
+            <span class="cval" id="val2">not set</span>
+          </button>
+          <div class="cbody">
+            <div class="hint">Put the pen on the <em id="cornerWord">bottom-left corner</em> of the card, enter the size you measured, and set the origin. Lower the pen until it nearly touches, so you can see exactly where it is sitting.</div>
+            <div class="readout">
+              <div class="ro"><span>X</span><b id="mx">--</b></div>
+              <div class="ro"><span>Y</span><b id="my">--</b></div>
+              <div class="ro key"><span>Centre will be</span><b id="mc">--</b></div>
+            </div>
+            <div class="jogrow">
+              <div class="pad">
+                <span></span>
+                <button class="jb" data-jog="0,1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 6-6 6 6"/></svg></button>
+                <span></span>
+                <button class="jb" data-jog="-1,0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg></button>
+                <button class="jb mid" id="homeBtn" title="Home X and Y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11.5 12 5l8 6.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 10.5V19h11v-8.5"/></svg></button>
+                <button class="jb" data-jog="1,0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"/></svg></button>
+                <span></span>
+                <button class="jb" data-jog="0,-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg></button>
+                <span></span>
+              </div>
+              <div class="grow">
+                <p class="steplbl">Step (mm)</p>
+                <div class="chips mb11" id="xySteps">
+                  <button class="sc" data-v="0.1">0.1</button>
+                  <button class="sc on" data-v="1">1</button>
+                  <button class="sc" data-v="10">10</button>
+                  <button class="sc" data-v="50">50</button>
+                </div>
+                <p class="steplbl">Card preset</p>
+                <div class="chips" id="presets">
+                  <button class="sc" data-w="150" data-h="100">150×100</button>
+                  <button class="sc" data-w="148" data-h="105">A6</button>
+                  <button class="sc" data-w="210" data-h="148">A5</button>
+                  <button class="sc" data-w="152.4" data-h="101.6">4×6″</button>
+                </div>
+              </div>
+            </div>
+            <div class="jogrow">
+              <div class="zcol"><button class="zb" data-zjog2="1">▲ Z up</button></div>
+              <div class="zcol"><button class="zb" data-zjog2="-1">▼ Z down</button></div>
+              <div class="grow">
+                <p class="steplbl">Z step (mm)</p>
+                <div class="chips" id="zSteps2">
+                  <button class="sc" data-v="0.5">0.5</button>
+                  <button class="sc on" data-v="1">1</button>
+                  <button class="sc" data-v="5">5</button>
+                  <button class="sc" data-v="10">10</button>
+                </div>
+              </div>
+            </div>
+            <div class="frow">
+              <div class="f"><label>Width mm</label><input id="paperW" type="number" step="0.1" value="150"></div>
+              <div class="times">×</div>
+              <div class="f"><label>Height mm</label><input id="paperH" type="number" step="0.1" value="100"></div>
+              <div class="f"><label>Pen is at</label>
+                <select id="cornerWhich">
+                  <option value="bottom-left">bottom-left</option>
+                  <option value="bottom-right">bottom-right</option>
+                  <option value="top-left">top-left</option>
+                  <option value="top-right">top-right</option>
+                  <option value="centre">the centre</option>
+                </select></div>
+            </div>
+            <button class="btn pri" id="setCorner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><path d="M12 3v18M3 12h18" stroke-linecap="round"/><circle cx="12" cy="12" r="4.4"/></svg>
+              <span id="setCornerLabel">Set origin from this corner</span></button>
+          </div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div class="card acc3" id="card3">
+          <button class="chead" data-open="3">
+            <span class="num" id="num3">3</span><span class="ctitle">Plot</span>
+            <span class="cval" id="val3">no artwork</span>
+          </button>
+          <div class="cbody">
+            <button class="drop" id="drop">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+              <div class="fn" id="dropName">Choose artwork</div>
+              <div class="sub" id="dropSub">an SVG or a line drawing (PNG, JPG); drop it here, or click to browse</div>
+            </button>
+            <div class="tracebox hide" id="traceBox">
+              <div class="tlab">Tracing<small id="traceInfo">reading the drawing</small></div>
+              <div class="frow">
+                <div class="f"><label>Threshold 0 = auto</label><input id="traceThreshold" type="number" step="1" min="0" max="254" value="0"></div>
+                <div class="f"><label>Fill over mm</label><input id="traceFillWidth" type="number" step="0.1" min="0.2" value="0.9"></div>
+                <div class="f"><label>Pen mm</label><input id="tracePen" type="number" step="0.05" min="0.05" value="0.3"></div>
+              </div>
+              <button class="tog on" id="togFills"><span class="sw"></span><span class="tt">Solid shapes as fills<small>Outlines and shades anything drawn thicker than the fill width. Off thins them to a spine, which turns eyebrows and lips into scribbles.</small></span></button>
+              <button class="tog on" id="togHatch"><span class="sw"></span><span class="tt">Shade the fills<small>Off leaves solid shapes as hollow outlines</small></span></button>
+              <div class="frow">
+                <button class="btn gho grow" id="maskAdd">Blank an area</button>
+                <button class="btn gho w110" id="maskClear">Clear</button>
+              </div>
+              <button class="btn gho" id="saveSvg">Save traced SVG</button>
+            </div>
+            <button class="tog" id="togText"><span class="sw"></span><span class="tt">Add text<small>Writes a message in a single-stroke font, where each letter is the path the pen travels. Works with artwork or on its own.</small></span></button>
+            <div class="textbox hide" id="textBox">
+              <div class="tlab">Message<small id="textInfo">nothing yet</small></div>
+              <textarea id="textMessage" rows="4" spellcheck="false" placeholder="Ella,&#10;&#10;Happy 6th Birthday!&#10;Love, Kevin"></textarea>
+              <div class="frow">
+                <div class="f grow2"><label>Font</label><select id="textFont"></select></div>
+                <div class="f"><label>Cap mm</label><input id="textSizeMm" type="number" step="0.5" min="1" value="5"></div>
+              </div>
+              <div class="frow">
+                <div class="f"><label>Line mm 0=auto</label><input id="textLineMm" type="number" step="0.5" min="0" value="0"></div>
+                <div class="f"><label>Align</label><select id="textAlign">
+                  <option value="centre">Centre</option><option value="left">Left</option><option value="right">Right</option>
+                </select></div>
+              </div>
+              <div class="frow">
+                <div class="f"><label>X mm from centre</label><input id="textX" type="number" step="1" value="0"></div>
+                <div class="f"><label>Y mm from centre</label><input id="textY" type="number" step="1" value="0"></div>
+              </div>
+            </div>
+            <div class="frow">
+              <div class="f"><label>Margin mm</label><input id="margin" type="number" step="0.5" value="10"></div>
+              <div class="f"><label>Min path mm</label><input id="minLen" type="number" step="0.1" value="0.5"></div>
+              <div class="f"><label>Draw mm/min</label><input id="drawFeed" type="number" step="100" value="3000"></div>
+            </div>
+            <button class="tog on" id="togDry"><span class="sw"></span><span class="tt">Dry run<small>Traces the plot in the air at Z20, drawing nothing. Check placement before committing ink.</small></span></button>
+            <button class="tog on" id="togFit"><span class="sw"></span><span class="tt">Fit to the card<small>Off plots the artwork at its authored size</small></span></button>
+            <button class="tog on" id="togRotate"><span class="sw"></span><span class="tt">Auto-rotate<small>Turns the artwork 90° when that fills the card better</small></span></button>
+            <button class="tog on" id="togLayers"><span class="sw"></span><span class="tt">Keep layer order<small>Layers plot in document order, so text lands last</small></span></button>
+            <div class="brow">
+              <button class="btn pri grow" id="sendPlot">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"><path d="M6 4.5 19.5 12 6 19.5z"/></svg>
+                <span id="sendLabel">Send dry run</span></button>
+              <button class="btn gho w120" id="saveGcode">Save gcode</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ LEFT: MACHINE ============ -->
+      <div class="left hide" id="tab-machine">
+        <div class="card open acc2">
+          <div class="chead"><span class="num">M</span><span class="ctitle">Machine</span>
+            <span class="cval" id="mState">--</span></div>
+          <div class="cbody">
+            <div class="readout">
+              <div class="ro"><span>Homed</span><b id="mHomed">--</b></div>
+              <div class="ro"><span>Sheet centre</span><b id="mOrigin">--</b></div>
+              <div class="ro"><span>Paper</span><b id="mPaper">--</b></div>
+            </div>
+            <div class="brow">
+              <button class="btn gho" id="mHome">Home X/Y</button>
+              <button class="btn gho" id="mPenTest">Pen test square</button>
+            </div>
+            <div class="brow">
+              <button class="btn gho" id="mGotoCentre">Go to sheet centre</button>
+              <button class="btn gho" id="mRefresh">Refresh</button>
+            </div>
+          </div>
+        </div>
+        <div class="log">
+          <h4>Machine console</h4>
+          <pre id="console">connecting…</pre>
+        </div>
+      </div>
+
+      <!-- ============ LEFT: SETTINGS ============ -->
+      <div class="left hide" id="tab-settings">
+        <div class="card open acc1">
+          <div class="chead"><span class="num">S</span><span class="ctitle">Connection</span></div>
+          <div class="cbody">
+            <div class="frow">
+              <div class="f"><label>Plotter address</label><input id="host" value="plotter.local"></div>
+              <button class="btn gho w120" id="reconnect">Connect</button>
+            </div>
+            <div class="hint" id="hostHint">Moonraker is on port 7125. mDNS drops out sometimes, so the IP is the fallback.</div>
+          </div>
+        </div>
+        <div class="card open acc2">
+          <div class="chead"><span class="num">P</span><span class="ctitle">Pen and motion</span></div>
+          <div class="cbody">
+            <div class="frow">
+              <div class="f"><label>Lift mm</label><input id="lift" type="number" step="0.5" value="10"></div>
+              <div class="f"><label>Travel mm/min</label><input id="travelFeed" type="number" step="500" value="9000"></div>
+            </div>
+            <div class="hint">Lift must exceed how far the carriage compresses at the writing height, or the pen never leaves the paper and every travel move draws. 2 mm was not enough. 10 mm works.
+              <br><br>Plot time is dominated by lifts, not drawing: at 10 mm each path costs about a second.</div>
+            <div class="frow">
+              <div class="f"><label>Simplify mm</label><input id="simplify" type="number" step="0.01" value="0.05"></div>
+              <div class="f"><label>Merge ends mm</label><input id="mergeTol" type="number" step="0.05" value="0.1"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ RIGHT: PREVIEW ============ -->
+      <div class="side">
+        <div class="pv">
+          <div class="pvhead">
+            <div class="h">Preview</div>
+            <div class="leg"><i></i> Draw</div>
+            <div class="leg tr"><i></i> Travel</div>
+          </div>
+          <div class="canvaswrap">
+            <svg id="pv" class="hide" viewBox="0 0 150 100"></svg>
+            <div class="empty" id="pvEmpty">Choose artwork in step 3 and the plot appears here,<br>with travel moves shown so you can see the pen lifts.</div>
+          </div>
+          <div class="stats">
+            <div class="st"><span>Paths</span><b id="sPaths">--</b></div>
+            <div class="st"><span>Draw</span><b id="sDraw">--</b></div>
+            <div class="st"><span>Travel</span><b id="sTravel">--</b></div>
+            <div class="st"><span>Pen lifts</span><b id="sLifts">--</b></div>
+            <div class="st hi"><span>Estimate</span><b id="sTime">--</b></div>
+          </div>
+        </div>
+
+        <div class="runbar hide" id="runbar">
+          <div class="rb">
+            <div class="rbtop"><span class="n" id="runTitle">Plotting</span>
+              <span class="p" id="runPct">0%</span>
+              <span class="r" id="runEta"></span></div>
+            <div class="bar"><i id="runFill"></i></div>
+          </div>
+          <button class="rbtn" id="pauseBtn">Pause</button>
+          <button class="rbtn stop" id="cancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>

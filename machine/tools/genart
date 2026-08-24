@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""
+genart - generative plotter art, no dependencies.
+
+  genart flow --seed 7
+  genart spiral --seed 2
+  genart moire
+  genart lissajous
+  genart all
+
+Every generator emits continuous polylines sized for the bed, which is what
+plots well: long unbroken strokes, few pen lifts.
+"""
+import argparse
+import math
+import random
+from pathlib import Path
+
+HOME = Path.home()
+ARTDIR = HOME / "plotter" / "art"
+W = 190.0
+H = 190.0
+
+
+# ---------- value noise ----------
+class Noise:
+    def __init__(self, seed, res=6):
+        rnd = random.Random(seed)
+        self.res = res
+        self.g = [[rnd.uniform(0, math.tau) for _ in range(res + 2)] for _ in range(res + 2)]
+
+    @staticmethod
+    def _fade(t):
+        return t * t * (3 - 2 * t)
+
+    def angle(self, x, y):
+        fx = x * self.res
+        fy = y * self.res
+        ix = int(fx)
+        iy = int(fy)
+        tx = self._fade(fx - ix)
+        ty = self._fade(fy - iy)
+        ix = max(0, min(self.res, ix))
+        iy = max(0, min(self.res, iy))
+        a = self.g[iy][ix]
+        b = self.g[iy][ix + 1]
+        c = self.g[iy + 1][ix]
+        d = self.g[iy + 1][ix + 1]
+        top = a + (b - a) * tx
+        bot = c + (d - c) * tx
+        return top + (bot - top) * ty
+
+
+def clamp_pt(x, y):
+    return 0.0 <= x <= W and 0.0 <= y <= H
+
+
+# ---------- generators ----------
+def flow(seed):
+    n = Noise(seed, res=5)
+    rnd = random.Random(seed + 991)
+    lines = []
+    for _ in range(900):
+        x = rnd.uniform(0, W)
+        y = rnd.uniform(0, H)
+        pts = []
+        for _ in range(220):
+            if not clamp_pt(x, y):
+                break
+            pts.append((x, y))
+            a = n.angle(x / W, y / H) * 2.0
+            x += math.cos(a) * 0.9
+            y += math.sin(a) * 0.9
+        if len(pts) > 25:
+            lines.append(pts)
+    return lines
+
+
+def spiral(seed):
+    rnd = random.Random(seed)
+    n = Noise(seed + 5, res=4)
+    lines = []
+    cx = W / 2
+    cy = H / 2
+    for ring in range(70):
+        r0 = 4 + ring * 1.25
+        pts = []
+        steps = max(60, int(r0 * 6))
+        for i in range(steps + 1):
+            t = i / steps * math.tau
+            wob = n.angle((math.cos(t) * r0 / W + 1) / 2, (math.sin(t) * r0 / H + 1) / 2)
+            r = r0 + math.sin(wob * 3.0) * (1.2 + ring * 0.07)
+            x = cx + math.cos(t) * r
+            y = cy + math.sin(t) * r
+            if clamp_pt(x, y):
+                pts.append((x, y))
+        if len(pts) > 10:
+            lines.append(pts)
+    return lines
+
+
+def moire(seed):
+    rnd = random.Random(seed)
+    lines = []
+    for k, (ang, step) in enumerate(((0.06, 2.4), (-0.05, 2.55))):
+        i = 0
+        while True:
+            off = i * step
+            if off > (W + H) * 1.1:
+                break
+            pts = []
+            for j in range(0, 61):
+                t = j / 60.0
+                x = t * W
+                y = off + math.tan(ang) * x - H * 0.25 + math.sin(t * math.pi * 2 + k) * 3.0
+                if clamp_pt(x, y):
+                    pts.append((x, y))
+            if len(pts) > 3:
+                lines.append(pts)
+            i += 1
+    return lines
+
+
+def lissajous(seed):
+    rnd = random.Random(seed)
+    lines = []
+    for k in range(26):
+        a = 3 + (k % 5)
+        b = 4 + (k % 7)
+        phase = k * 0.12
+        scale = 82.0 - k * 0.9
+        pts = []
+        for i in range(1400):
+            t = i / 1400.0 * math.tau
+            x = W / 2 + math.sin(a * t + phase) * scale
+            y = H / 2 + math.sin(b * t) * scale
+            if clamp_pt(x, y):
+                pts.append((x, y))
+        if len(pts) > 20:
+            lines.append(pts)
+    return lines
+
+
+GENS = {"flow": flow, "spiral": spiral, "moire": moire, "lissajous": lissajous}
+
+
+def write_svg(lines, path):
+    parts = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="%gmm" height="%gmm" viewBox="0 0 %g %g">'
+        % (W, H, W, H)
+    ]
+    for pts in lines:
+        d = "M " + " L ".join("%.2f %.2f" % (x, y) for x, y in pts)
+        parts.append('<path d="%s" fill="none" stroke="black" stroke-width="0.3"/>' % d)
+    parts.append("</svg>")
+    path.write_text("\n".join(parts))
+    total = sum(len(p) for p in lines)
+    return len(lines), total
+
+
+def main():
+    ap = argparse.ArgumentParser(description="generative plotter art")
+    ap.add_argument("kind", choices=list(GENS) + ["all"])
+    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    ARTDIR.mkdir(parents=True, exist_ok=True)
+    kinds = list(GENS) if args.kind == "all" else [args.kind]
+    for k in kinds:
+        out = Path(args.out).expanduser() if args.out else ARTDIR / ("%s-%d.svg" % (k, args.seed))
+        lines = GENS[k](args.seed)
+        nl, npts = write_svg(lines, out)
+        print("%-10s %4d paths %6d points  ->  %s" % (k, nl, npts, out))
+
+
+if __name__ == "__main__":
+    main()

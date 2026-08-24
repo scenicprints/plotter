@@ -1,0 +1,8 @@
+# Keep LF everywhere. The Pi-side tools in machine/tools/ are shebang scripts
+# and CRLF breaks them the moment they are copied to the Pi.
+* text=auto eol=lf
+
+*.png  binary
+*.bin  binary
+*.stl  binary
+*.ico  binary

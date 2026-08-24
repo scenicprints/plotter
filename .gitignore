@@ -1,0 +1,13 @@
+# Electron app build output
+app/node_modules/
+app/dist/
+
+# npm / editor noise
+npm-debug.log*
+.DS_Store
+Thumbs.db
+*.swp
+
+# Python bytecode from the Pi-side tools
+__pycache__/
+*.pyc

@@ -1,0 +1,20 @@
+# vpype-gcode profile for the CR-6 pen plotter.
+# Emits the Klipper macros rather than raw Z commands, so the machine side
+# can change without touching the pipeline.
+#
+# Feedrates here are defaults; the `plot` CLI rewrites them per pen.
+#
+# NOTE: document_end deliberately does NOT call PLOT_END. The copy of that
+# macro currently loaded in Klipper still has the old M84 (which erases the
+# hand-set Z reference) and a park move that overruns the rail. Emitting the
+# safe commands directly avoids needing a Klipper restart mid-session.
+
+[gwrite.plotter]
+document_start = "; CR-6 pen plotter\nG21\nG90\nPLOT_START\n"
+segment_first = "G0 X{x:.3f} Y{y:.3f} F9000\nPEN_DOWN\n"
+segment = "G1 X{x:.3f} Y{y:.3f} F3000\n"
+line_end = "PEN_UP\n"
+document_end = "PEN_UP\nG1 Z20 F900\n"
+unit = "mm"
+vertical_flip = true
+info = "CR-6 SE plotter: PEN_UP/PEN_DOWN macros, mm, Y-flipped for SVG origin"

@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""
+mkcalib - generate the Phase 10.3 calibration sheet as an SVG.
+
+Everything on this page tests one thing:
+  100 mm square      dimensional accuracy and squareness
+  concentric circles belt tension and backlash (look for flat spots)
+  parallel line sets registration at 1, 2 and 5 mm spacing
+  diagonal grid      skew / gantry tram
+  text               the Hershey font pipeline
+
+  mkcalib                 write ~/plotter/art/calibration.svg
+  mkcalib --out other.svg
+"""
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+VPYPE = str(HOME / ".local" / "bin" / "vpype")
+
+
+def mm(v):
+    return "%gmm" % v
+
+
+def build(out):
+    cmd = [VPYPE]
+
+    # 100 x 100 mm square, bottom left of the sheet
+    cmd += ["rect", mm(12), mm(12), mm(100), mm(100)]
+
+    # concentric circles, top right
+    for r in (10, 20, 30, 40):
+        cmd += ["circle", mm(160), mm(62), mm(r)]
+
+    # parallel line sets: 1 mm, 2 mm, 5 mm spacing
+    groups = ((1.0, 130.0), (2.0, 152.0), (5.0, 174.0))
+    for spacing, y0 in groups:
+        for i in range(8):
+            y = y0 + i * spacing
+            cmd += ["line", mm(12), mm(y), mm(60), mm(y)]
+
+    # diagonal grid, skew check
+    for i in range(9):
+        off = i * 8.0
+        cmd += ["line", mm(80 + off), mm(130), mm(120 + off), mm(190)]
+    for i in range(9):
+        off = i * 8.0
+        cmd += ["line", mm(80 + off), mm(190), mm(120 + off), mm(130)]
+
+    # text, exercises the Hershey pipeline
+    cmd += ["text", "-p", mm(12), mm(202), "-s", "6", "CR-6 SE plotter calibration"]
+
+    cmd += ["write", "--page-size", "215mmx215mm", str(out)]
+    return cmd
+
+
+def main():
+    ap = argparse.ArgumentParser(description="generate the plotter calibration sheet")
+    ap.add_argument("--out", default=str(HOME / "plotter" / "art" / "calibration.svg"))
+    args = ap.parse_args()
+
+    out = Path(args.out).expanduser()
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = build(out)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        print("vpype failed:\n" + res.stdout + "\n" + res.stderr, file=sys.stderr)
+        sys.exit(1)
+    print("wrote %s" % out)
+
+
+if __name__ == "__main__":
+    main()

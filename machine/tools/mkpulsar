@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""
+mkpulsar - ridgeline ("joy plot") generator, in the style of the CP 1919
+pulsar chart. Continuous polylines with hidden-line removal, which is what
+makes it plot well: long strokes, few pen lifts, no fragments.
+
+  mkpulsar                      default, sized for 8.5in wide paper
+  mkpulsar --rows 100 --seed 3
+  mkpulsar --width 170 --height 200
+"""
+import argparse
+import math
+import random
+from pathlib import Path
+
+ARTDIR = Path.home() / "plotter" / "art"
+
+
+class Noise:
+    """1-D value noise with smooth interpolation."""
+
+    def __init__(self, seed, n=64):
+        rnd = random.Random(seed)
+        self.n = n
+        self.v = [rnd.uniform(0.0, 1.0) for _ in range(n + 2)]
+
+    @staticmethod
+    def _fade(t):
+        return t * t * (3 - 2 * t)
+
+    def at(self, x):
+        fx = x * self.n
+        i = int(fx)
+        t = self._fade(fx - i)
+        i = max(0, min(self.n, i))
+        a = self.v[i]
+        b = self.v[i + 1]
+        return a + (b - a) * t
+
+
+def build(rows, cols, width, height, seed, peak, spread):
+    rnd = random.Random(seed)
+    row_gap = height / float(rows)
+
+    # rows are generated front (bottom) to back (top) for hidden-line removal
+    lines = []
+    horizon = [1e9] * cols
+
+    for r in range(rows):
+        # r = 0 is the FRONT row, at the bottom of the image
+        baseline = height - r * row_gap
+        # how "active" this row is: strongest through the middle of the stack
+        t_row = r / float(rows - 1)
+        row_env = math.exp(-((t_row - 0.5) ** 2) / (2 * 0.26 ** 2))
+
+        n1 = Noise(seed * 977 + r, n=40)
+        n2 = Noise(seed * 131 + r * 7 + 1, n=13)
+
+        pts = []
+        for c in range(cols):
+            x = c / float(cols - 1)
+            # horizontal envelope: activity concentrated in the centre
+            x_env = math.exp(-((x - 0.5) ** 2) / (2 * spread ** 2))
+            # spiky detail plus a broader swell
+            fine = (n1.at(x) - 0.5) * 2.0
+            broad = (n2.at(x) - 0.5) * 2.0
+            amp = (abs(fine) ** 1.7) * 0.75 + (abs(broad) ** 1.3) * 0.55
+            h = amp * peak * row_env * x_env
+            # a little baseline noise so flat sections are not dead straight
+            h += (n2.at(x * 0.5) - 0.5) * 0.6
+            pts.append((x * width, baseline - h))
+
+        # hidden-line removal: visible only where this row rises above
+        # everything already drawn in front of it
+        run = []
+        for c, (px, py) in enumerate(pts):
+            if py < horizon[c] - 0.01:
+                run.append((px, py))
+            else:
+                if len(run) > 1:
+                    lines.append(run)
+                run = []
+        if len(run) > 1:
+            lines.append(run)
+
+        for c, (px, py) in enumerate(pts):
+            if py < horizon[c]:
+                horizon[c] = py
+
+    return lines
+
+
+def write_svg(lines, width, height, path):
+    parts = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="%gmm" height="%gmm" viewBox="0 0 %g %g">'
+        % (width, height, width, height)
+    ]
+    for pts in lines:
+        d = "M " + " L ".join("%.3f %.3f" % (x, y) for x, y in pts)
+        parts.append('<path d="%s" fill="none" stroke="black" stroke-width="0.3"/>' % d)
+    parts.append("</svg>")
+    path.write_text("\n".join(parts))
+    return len(lines), sum(len(p) for p in lines)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="pulsar-style ridgeline plot")
+    ap.add_argument("--rows", type=int, default=80)
+    ap.add_argument("--cols", type=int, default=420)
+    ap.add_argument("--width", type=float, default=170.0, help="mm")
+    ap.add_argument("--height", type=float, default=200.0, help="mm")
+    ap.add_argument("--peak", type=float, default=26.0, help="max ridge height, mm")
+    ap.add_argument("--spread", type=float, default=0.17, help="horizontal concentration")
+    ap.add_argument("--seed", type=int, default=1919)
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    ARTDIR.mkdir(parents=True, exist_ok=True)
+    out = Path(args.out).expanduser() if args.out else ARTDIR / ("pulsar-%d.svg" % args.seed)
+
+    lines = build(args.rows, args.cols, args.width, args.height,
+                  args.seed, args.peak, args.spread)
+    nl, npts = write_svg(lines, args.width, args.height, out)
+    print("%d rows -> %d visible strokes, %d points  ->  %s" % (args.rows, nl, npts, out))
+
+
+if __name__ == "__main__":
+    main()

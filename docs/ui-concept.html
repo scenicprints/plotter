@@ -1,0 +1,347 @@
+<meta charset="utf-8">
+<title>Plotter</title>
+<style>
+:root{
+  --bg:#181613; --panel:#211E19; --panel2:#282420; --raise:#322D26;
+  --line:#37312A; --line2:#4A4338;
+  --text:#EFE9DE; --dim:#A2988A; --faint:#7C7365;
+  --a1:#E0A15A; --a2:#74B6C0; --a3:#95C07E; --danger:#DB6E62;
+  --paper:#FAF6ED; --ink:#3D3A6B; --travel:#C8BFAE;
+  --shadow:0 1px 2px rgba(0,0,0,.28),0 10px 24px -18px rgba(0,0,0,.75);
+  --mono:"Cascadia Mono",Consolas,ui-monospace,monospace;
+  --ui:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,sans-serif;
+  --r:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--ui);font-size:14px;
+  overflow:hidden;-webkit-font-smoothing:antialiased}
+.app{display:flex;flex-direction:column;height:100vh}
+input.h{position:absolute;opacity:0;pointer-events:none;width:0;height:0}
+
+/* ---------- title bar ---------- */
+.titlebar{height:48px;flex:none;display:flex;align-items:center;gap:12px;
+  padding:0 10px 0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600}
+.brand svg{width:20px;height:20px;color:var(--a2)}
+.brand small{color:var(--faint);font-weight:500;font-size:11px}
+.spacer{flex:1}
+.chip{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;
+  border:1px solid var(--line);border-radius:8px;background:var(--panel2);
+  font-size:12.5px;color:var(--dim)}
+.chip b{color:var(--text);font-weight:600}
+.chip.pos{font-family:var(--mono);letter-spacing:-.2px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--a3)}
+.wbtn{width:34px;height:30px;border:0;background:transparent;color:var(--dim);
+  border-radius:7px;cursor:pointer;font-size:13px;font-family:var(--ui)}
+.wbtn:hover{background:var(--raise);color:var(--text)}
+.wbtn.close:hover{background:var(--danger);color:#181613}
+
+/* ---------- rail ---------- */
+.body{display:flex;flex:1;min-height:0}
+.rail{width:60px;flex:none;border-right:1px solid var(--line);background:var(--panel);
+  display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0}
+.rtab{width:40px;height:40px;border-radius:var(--r);display:grid;place-items:center;
+  color:var(--faint);cursor:pointer;position:relative;transition:.15s}
+.rtab:hover{color:var(--text);background:var(--panel2)}
+.rail input:checked + .rtab{color:var(--a2);background:var(--panel2)}
+.rail input:checked + .rtab::before{content:"";position:absolute;left:-10px;width:3px;height:18px;
+  border-radius:0 2px 2px 0;background:var(--a2)}
+.rtab svg{width:19px;height:19px}
+.rtab .tip{position:absolute;left:50px;white-space:nowrap;background:var(--raise);color:var(--text);
+  border:1px solid var(--line2);padding:5px 9px;border-radius:6px;font-size:12px;
+  opacity:0;pointer-events:none;transition:.14s;z-index:30}
+.rtab:hover .tip{opacity:1}
+.estop{margin-top:auto;width:40px;height:40px;border-radius:var(--r);cursor:pointer;
+  border:1px solid var(--line2);background:var(--panel2);color:var(--danger);
+  display:grid;place-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;font-family:var(--ui)}
+.estop:hover{background:var(--danger);color:#181613;border-color:var(--danger)}
+
+/* ---------- main ---------- */
+.main{flex:1;min-width:0;display:flex;gap:16px;padding:16px;overflow:hidden}
+.steps{width:430px;flex:none;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:4px}
+.steps::-webkit-scrollbar{width:8px}
+.steps::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+
+.banner{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:12px;
+  border:1px solid var(--line2);background:var(--panel2)}
+.banner svg{width:17px;height:17px;color:var(--a1);flex:none}
+.banner .t{flex:1;font-size:12.5px;line-height:1.5;color:var(--dim)}
+.banner .t b{display:block;color:var(--text);font-size:13px;margin-bottom:1px}
+
+/* ---------- step card ---------- */
+.cwrap{position:relative}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  overflow:hidden;position:relative;transition:.18s;box-shadow:var(--shadow)}
+.cwrap:has(.sr:checked) .card{border-color:var(--ac);background:var(--panel2)}
+.cwrap:has(.sr:checked) .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ac)}
+.chead{display:flex;align-items:center;gap:11px;padding:14px 15px;cursor:pointer}
+.chead:hover{background:rgba(255,255,255,.02)}
+.num{width:23px;height:23px;border-radius:7px;flex:none;display:grid;place-items:center;
+  font-size:11.5px;font-weight:800;background:var(--raise);color:var(--faint);transition:.18s}
+.cwrap:has(.sr:checked) .num{background:var(--ac);color:#181613}
+.card.done .num{background:transparent;color:var(--a3);border:1.5px solid var(--a3)}
+.ctitle{flex:1;font-size:13.5px;font-weight:650;color:var(--dim)}
+.cwrap:has(.sr:checked) .ctitle,.card.done .ctitle{color:var(--text)}
+.cval{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.card.done .cval{color:var(--a3)}
+.cbody{padding:0 15px 15px;display:none}
+.cwrap:has(.sr:checked) .cbody{display:block}
+.hint{font-size:12.5px;color:var(--dim);line-height:1.55;margin-bottom:14px}
+.hint em{color:var(--text);font-style:normal;font-weight:650}
+
+.readout{display:flex;gap:8px;margin-bottom:13px}
+.ro{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:9px 11px}
+.ro span{display:block;font-size:9.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+.ro b{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-.5px}
+.ro.key b{color:var(--ac)}
+
+.jogrow{display:flex;gap:12px;margin-bottom:13px}
+.pad{display:grid;grid-template-columns:repeat(3,37px);grid-template-rows:repeat(3,37px);gap:5px}
+.jb{border:1px solid var(--line2);background:var(--panel);color:var(--dim);border-radius:9px;
+  cursor:pointer;display:grid;place-items:center;transition:.13s;font-family:var(--ui)}
+.jb:hover{background:var(--ac);color:#181613;border-color:var(--ac)}
+.jb svg{width:15px;height:15px}
+.jb.mid{border-style:dashed;background:transparent}
+.zcol{display:flex;flex-direction:column;gap:5px;width:76px}
+.zb{height:37px;border:1px solid var(--line2);background:var(--panel);color:var(--text);
+  border-radius:9px;cursor:pointer;font-family:var(--mono);font-size:12.5px;transition:.13s}
+.zb:hover{background:var(--ac);color:#181613;border-color:var(--ac)}
+.steplbl{font-size:9.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin:0 0 6px}
+.chips{display:flex;gap:5px;flex-wrap:wrap}
+.sc{padding:5px 10px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);
+  color:var(--dim);font-family:var(--mono);font-size:11.5px;cursor:pointer;transition:.13s;display:inline-block}
+.sc:hover{color:var(--text)}
+.chips input:checked + .sc{background:var(--ac);color:#181613;border-color:var(--ac);font-weight:700}
+
+.frow{display:flex;gap:9px;align-items:flex-end;margin-bottom:12px}
+.f{flex:1}
+.f label{display:block;font-size:9.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+.f input,.f select{width:100%;height:36px;border-radius:9px;border:1px solid var(--line2);
+  background:var(--bg);color:var(--text);padding:0 11px;font-family:var(--mono);font-size:13.5px;outline:0}
+.f input:focus,.f select:focus{border-color:var(--ac)}
+.times{color:var(--faint);font-family:var(--mono);padding-bottom:9px}
+
+.btn{width:100%;height:42px;border:0;border-radius:var(--r);cursor:pointer;font-family:var(--ui);
+  font-size:13.5px;font-weight:650;display:flex;align-items:center;justify-content:center;gap:8px;transition:.14s}
+.btn svg{width:16px;height:16px}
+.btn.pri{background:var(--ac);color:#181613}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.gho{background:var(--panel);border:1px solid var(--line2);color:var(--dim);height:36px;font-size:12.5px}
+.btn.gho:hover{color:var(--text);background:var(--raise)}
+.brow{display:flex;gap:8px;margin-bottom:10px}
+
+.drop{border:1.5px dashed var(--line2);border-radius:12px;padding:15px;text-align:center;
+  cursor:pointer;transition:.14s;margin-bottom:12px;display:block}
+.drop:hover{border-color:var(--ac);background:var(--panel)}
+.drop svg{width:21px;height:21px;color:var(--ac);margin-bottom:6px}
+.drop .fn{font-family:var(--mono);font-size:13px;color:var(--text)}
+.drop .sub{font-size:11.5px;color:var(--faint);margin-top:3px}
+
+.tog{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--bg);margin-bottom:12px;cursor:pointer}
+.sw{width:34px;height:19px;border-radius:99px;background:var(--line2);position:relative;flex:none;transition:.18s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+  background:var(--panel);transition:.18s}
+input:checked + .tog .sw{background:var(--ac)}
+input:checked + .tog .sw::after{left:17px;background:#181613}
+.tog .tt{flex:1;font-size:12.5px}
+.tog .tt small{display:block;color:var(--faint);font-size:11px;margin-top:2px}
+
+/* ---------- preview ---------- */
+.side{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+.pv{flex:1;min-height:0;border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow)}
+.pvhead{display:flex;align-items:center;gap:14px;padding:12px 15px;border-bottom:1px solid var(--line)}
+.pvhead .h{font-size:13px;font-weight:650;flex:1}
+.leg{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+.leg i{width:14px;height:2px;border-radius:2px;background:var(--ink);display:block}
+.leg.tr i{background:transparent;border-top:1.5px dashed var(--travel);height:0}
+.canvaswrap{flex:1;min-height:0;display:grid;place-items:center;padding:20px;background:var(--bg)}
+#pv{max-width:100%;max-height:100%;box-shadow:0 14px 34px -18px #000;border-radius:2px}
+#pv .dr{fill:none;stroke:var(--ink);stroke-width:.45;stroke-linecap:round;stroke-linejoin:round}
+#pv .tv{fill:none;stroke:var(--travel);stroke-width:.22;stroke-dasharray:.9 1.1}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line)}
+.st{padding:11px 14px;border-right:1px solid var(--line)}
+.st:last-child{border-right:0}
+.st span{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+.st b{font-family:var(--mono);font-size:15.5px;font-weight:600}
+.st.hi b{color:var(--a3)}
+
+.runbar{flex:none;border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  padding:13px 15px;display:none;gap:14px;align-items:center;box-shadow:var(--shadow)}
+.side:has(#running:checked) .runbar{display:flex}
+.rb{flex:1;min-width:0}
+.rbtop{display:flex;align-items:baseline;gap:9px;margin-bottom:8px}
+.rbtop .n{font-size:13px;font-weight:650}
+.rbtop .p{font-family:var(--mono);color:var(--a3);font-size:13px}
+.rbtop .r{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--dim)}
+.bar{height:6px;border-radius:99px;background:var(--raise);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--a3)}
+.rbtn{height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--line2);
+  background:var(--panel2);color:var(--dim);font-size:12.5px;font-weight:600;cursor:pointer;
+  font-family:var(--ui);display:inline-flex;align-items:center}
+.rbtn:hover{color:var(--text);background:var(--raise)}
+.rbtn.stop{color:var(--danger)}
+.rbtn.stop:hover{background:var(--danger);color:#181613;border-color:var(--danger)}
+</style>
+
+<div class="app">
+  <div class="titlebar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 18.5 9 13.4 20a1.6 1.6 0 0 1-2.8 0L5.5 9z" stroke-linejoin="round"/><circle cx="12" cy="9.4" r="1.9" fill="currentColor" stroke="none"/></svg>
+      Plotter <small>1.0</small>
+    </div>
+    <div class="spacer"></div>
+    <div class="chip"><i class="dot"></i> <b>plotter.local</b> · Ready</div>
+    <div class="chip pos">X <b>98.0</b> &nbsp;Y <b>109.0</b> &nbsp;Z <b>0.00</b></div>
+    <button class="wbtn">–</button><button class="wbtn">▢</button><button class="wbtn close">✕</button>
+  </div>
+
+  <div class="body">
+    <div class="rail">
+      <input class="h" type="radio" name="rail" id="r1" checked><label class="rtab" for="r1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 18.5 9 13.4 20a1.6 1.6 0 0 1-2.8 0L5.5 9z" stroke-linejoin="round"/></svg><i class="tip">Plot</i></label>
+      <input class="h" type="radio" name="rail" id="r2"><label class="rtab" for="r2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 21c5-3 8-6.4 8-10a4.4 4.4 0 0 0-8-2.6A4.4 4.4 0 0 0 4 11c0 3.6 3 7 8 10Z"/></svg><i class="tip">Artwork</i></label>
+      <input class="h" type="radio" name="rail" id="r3"><label class="rtab" for="r3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h9M17 17h3"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></svg><i class="tip">Machine</i></label>
+      <input class="h" type="radio" name="rail" id="r4"><label class="rtab" for="r4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M4.5 4.5l1.7 1.7M17.8 17.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.5 19.5l1.7-1.7M17.8 6.2l1.7-1.7"/></svg><i class="tip">Settings</i></label>
+      <button class="estop">STOP</button>
+    </div>
+
+    <div class="main">
+      <div class="steps">
+        <div class="banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 12a8.5 8.5 0 1 1 2.6 6.1"/><path d="M3 19v-5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="t"><b>Klipper restarted</b>Last session: Z0 · corner X23.0 Y59.0 · card 150 × 100</div>
+          <button class="rbtn">Restore</button>
+        </div>
+
+        <!-- STEP 1 -->
+        <div class="cwrap" style="--ac:var(--a1)">
+          <input class="h sr" type="radio" name="step" id="s1">
+          <div class="card done">
+            <label class="chead" for="s1"><span class="num">✓</span><span class="ctitle">Writing height</span>
+              <span class="cval">Z0 locked</span></label>
+            <div class="cbody">
+              <div class="hint">Jog down until the pen writes with the carriage <em>floating off its stop</em>, then lock. Z0 is the floor, it cannot go lower.</div>
+              <div class="readout"><div class="ro key"><span>Z position</span><b>4.35</b></div>
+                <div class="ro"><span>Carriage float</span><b>15.9</b></div></div>
+              <div class="jogrow">
+                <div class="zcol"><button class="zb">▲ +1</button><button class="zb">▲ +0.1</button></div>
+                <div class="zcol"><button class="zb">▼ −0.1</button><button class="zb">▼ −1</button></div>
+                <div style="flex:1"><p class="steplbl">Step (mm)</p>
+                  <div class="chips">
+                    <input class="h" type="radio" name="zs" id="zs1"><label class="sc" for="zs1">0.05</label>
+                    <input class="h" type="radio" name="zs" id="zs2" checked><label class="sc" for="zs2">0.1</label>
+                    <input class="h" type="radio" name="zs" id="zs3"><label class="sc" for="zs3">0.5</label>
+                    <input class="h" type="radio" name="zs" id="zs4"><label class="sc" for="zs4">1</label>
+                  </div></div>
+              </div>
+              <div class="brow"><button class="btn gho">Pen down</button><button class="btn gho">Pen up</button></div>
+              <button class="btn pri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7a3.5 3.5 0 0 1 7 0v3.5"/></svg> Lock Z0 here</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="cwrap" style="--ac:var(--a2)">
+          <input class="h sr" type="radio" name="step" id="s2" checked>
+          <div class="card">
+            <label class="chead" for="s2"><span class="num">2</span><span class="ctitle">Card corner</span>
+              <span class="cval">bottom-left</span></label>
+            <div class="cbody">
+              <div class="hint">Put the pen on the <em>bottom-left corner</em> of the card, enter the size you measured, and set the origin.</div>
+              <div class="readout">
+                <div class="ro"><span>X</span><b>23.0</b></div>
+                <div class="ro"><span>Y</span><b>59.0</b></div>
+                <div class="ro key"><span>Centre</span><b>98 · 109</b></div>
+              </div>
+              <div class="jogrow">
+                <div class="pad">
+                  <span></span>
+                  <button class="jb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 6-6 6 6"/></svg></button>
+                  <span></span>
+                  <button class="jb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg></button>
+                  <button class="jb mid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="2.4"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke-linecap="round"/></svg></button>
+                  <button class="jb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"/></svg></button>
+                  <span></span>
+                  <button class="jb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg></button>
+                  <span></span>
+                </div>
+                <div style="flex:1"><p class="steplbl">Step (mm)</p>
+                  <div class="chips" style="margin-bottom:11px">
+                    <input class="h" type="radio" name="xs" id="xs1"><label class="sc" for="xs1">0.1</label>
+                    <input class="h" type="radio" name="xs" id="xs2" checked><label class="sc" for="xs2">1</label>
+                    <input class="h" type="radio" name="xs" id="xs3"><label class="sc" for="xs3">10</label>
+                    <input class="h" type="radio" name="xs" id="xs4"><label class="sc" for="xs4">50</label>
+                  </div>
+                  <p class="steplbl">Card preset</p>
+                  <div class="chips">
+                    <input class="h" type="radio" name="cp" id="cp1" checked><label class="sc" for="cp1">150×100</label>
+                    <input class="h" type="radio" name="cp" id="cp2"><label class="sc" for="cp2">A6</label>
+                    <input class="h" type="radio" name="cp" id="cp3"><label class="sc" for="cp3">A5</label>
+                    <input class="h" type="radio" name="cp" id="cp4"><label class="sc" for="cp4">4×6″</label>
+                  </div>
+                </div>
+              </div>
+              <div class="frow">
+                <div class="f"><label>Width mm</label><input value="150"></div>
+                <div class="times">×</div>
+                <div class="f"><label>Height mm</label><input value="100"></div>
+              </div>
+              <button class="btn pri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><path d="M12 3v18M3 12h18" stroke-linecap="round"/><circle cx="12" cy="12" r="4.4"/></svg> Set origin from this corner</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div class="cwrap" style="--ac:var(--a3)">
+          <input class="h sr" type="radio" name="step" id="s3">
+          <div class="card">
+            <label class="chead" for="s3"><span class="num">3</span><span class="ctitle">Plot</span>
+              <span class="cval">9m 14s</span></label>
+            <div class="cbody">
+              <div class="drop">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+                <div class="fn">art-cake-outline.svg</div>
+                <div class="sub">527 paths · drop a new SVG or click to browse</div>
+              </div>
+              <div class="frow">
+                <div class="f"><label>Margin mm</label><input value="10"></div>
+                <div class="f"><label>Min path mm</label><input value="0.5"></div>
+                <div class="f"><label>Pen</label><select><option>Fine 0.3</option><option>Gel 0.5</option></select></div>
+              </div>
+              <input class="h" type="checkbox" id="dry" checked>
+              <label class="tog" for="dry"><span class="sw"></span><span class="tt">Dry run<small>Flies at Z20 to clear the magnets, nothing is drawn</small></span></label>
+              <label class="btn pri" for="running"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"><path d="M6 4.5 19.5 12 6 19.5z"/></svg> Send plot</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side">
+        <input class="h" type="checkbox" id="running">
+        <div class="pv">
+          <div class="pvhead"><div class="h">Preview</div>
+            <div class="leg"><i></i> Draw</div><div class="leg tr"><i></i> Travel</div>
+            <button class="rbtn" style="height:29px;padding:0 12px;font-size:12px">Fit</button></div>
+          <div class="canvaswrap"><svg id="pv" viewBox="0 0 150 100"><rect width="150" height="100" fill="var(--paper)"/><path class="tv" d="M6 6L9 9M9 9L12 9M19 9L9 12M9 19L138 9M131 9L141 12M141 19L12 91M19 91L9 88M9 81L138 91M131 91L141 88M141 81L109 80M109 80L105 78.5M105 78.5L49 70M49 79L101 70M101 79L101 79M101 79L101 70M101 70L49 71.2M101 71.2L56.43 73.4M56.43 78.6L63.86 73.4M63.86 78.6L71.29 73.4M71.29 78.6L78.71 73.4M78.71 78.6L86.14 73.4M86.14 78.6L93.57 73.4M93.57 78.6L54 58M54 67L96 58M96 67L96 67M96 67L96 58M96 58L54 59.2M96 59.2L60 61.4M60 66.6L66 61.4M66 66.6L72 61.4M72 66.6L78 61.4M78 66.6L84 61.4M84 66.6L90 61.4M90 66.6L59 46M59 55L91 46M91 55L91 55M91 55L91 46M91 46L59 47.2M91 47.2L63.57 49.4M63.57 54.6L68.14 49.4M68.14 54.6L72.71 49.4M72.71 54.6L77.29 49.4M77.29 54.6L81.86 49.4M81.86 54.6L86.43 49.4M86.43 54.6L65 37M65 37L65 40M67 40L65 42.6M67 42.6L66 37M66 37L66.7 34.4M66.7 34.4L69.5 37M69.5 37L69.5 40M71.5 40L69.5 42.6M71.5 42.6L70.5 37M70.5 37L71.2 34.4M71.2 34.4L74 37M74 37L74 40M76 40L74 42.6M76 42.6L75 37M75 37L75.7 34.4M75.7 34.4L78.5 37M78.5 37L78.5 40M80.5 40L78.5 42.6M80.5 42.6L79.5 37M79.5 37L80.2 34.4M80.2 34.4L83 37M83 37L83 40M85 40L83 42.6M85 42.6L84 37M84 37L84.7 34.4M84.7 34.4L26.2 26M29 26L25.1 27.91M26.5 30.33L22.9 27.91M21.5 30.33L21.8 26M19 26L22.9 24.09M21.5 21.67L25.1 24.09M26.5 21.67L25.4 26M25.4 26L128.03 26.86M130.61 27.95L126.27 28.18M126.62 30.96L124.24 27.33M122.01 29.01L123.97 25.14M121.39 24.05L125.73 23.82M125.38 21.04L127.76 24.67M129.99 22.99L127.4 26M127.4 26L21.53 59.58M23.48 61.59L19.4 60.12M18.64 62.81L17.87 58.54M15.15 59.22L18.47 56.42M16.52 54.41L20.6 55.88M21.36 53.19L22.13 57.46M24.85 56.78L21.4 58M21.4 58L130.8 60.05M131.81 62.66L128.62 59.72M126.87 61.9L127.83 57.67M125.06 57.24L129.2 55.95M128.19 53.34L131.38 56.28M133.13 54.1L132.17 58.33M134.94 58.76L131.4 58M131.4 58L37.94 20.2M37.85 23L36.06 19.04M33.6 20.37L36.13 16.84M33.74 15.37L38.06 15.8M38.15 13L39.94 16.96M42.4 15.63L39.87 19.16M42.26 20.63L39.4 18M39.4 18L111.08 20M109.92 22.55L109.81 18.21M107.02 18.47L110.73 16.21M109.1 13.92L112.92 16M114.08 13.45L114.19 17.79M116.98 17.53L113.27 19.79M114.9 22.08L113.4 18"/><path class="dr" d="M6 6L144 6L144 94L6 94L6 6M9 9L141 9L141 91L9 91L9 9M12 9L19 9M9 12L9 19M138 9L131 9M141 12L141 19M12 91L19 91M9 88L9 81M138 91L131 91M141 88L141 81M109 80L108.84 80.49L108.35 80.98L107.54 81.45L106.41 81.91L104.99 82.36L103.27 82.78L101.28 83.17L99.04 83.54L96.57 83.87L93.89 84.16L91.03 84.41L88.01 84.62L84.87 84.78L81.63 84.9L78.33 84.98L75 85L71.67 84.98L68.37 84.9L65.13 84.78L61.99 84.62L58.97 84.41L56.11 84.16L53.43 83.87L50.96 83.54L48.72 83.17L46.73 82.78L45.01 82.36L43.59 81.91L42.46 81.45L41.65 80.98L41.16 80.49L41 80L41.16 79.51L41.65 79.02L42.46 78.55L43.59 78.09L45.01 77.64L46.73 77.22L48.72 76.83L50.96 76.46L53.43 76.13L56.11 75.84L58.97 75.59L61.99 75.38L65.13 75.22L68.37 75.1L71.67 75.02L75 75L78.33 75.02L81.63 75.1L84.87 75.22L88.01 75.38L91.03 75.59L93.89 75.84L96.57 76.13L99.04 76.46L101.28 76.83L103.27 77.22L104.99 77.64L106.41 78.09L107.54 78.55L108.35 79.02L108.84 79.51L109 80M105 78.5L104.86 78.89L104.42 79.28L103.71 79.66L102.72 80.03L101.46 80.39L99.94 80.72L98.19 81.04L96.21 81.33L94.03 81.59L91.67 81.83L89.14 82.03L86.48 82.2L83.71 82.33L80.85 82.42L77.94 82.48L75 82.5L72.06 82.48L69.15 82.42L66.29 82.33L63.52 82.2L60.86 82.03L58.33 81.83L55.97 81.59L53.79 81.33L51.81 81.04L50.06 80.72L48.54 80.39L47.28 80.03L46.29 79.66L45.58 79.28L45.14 78.89L45 78.5L45.14 78.11L45.58 77.72L46.29 77.34L47.28 76.97L48.54 76.61L50.06 76.28L51.81 75.96L53.79 75.67L55.97 75.41L58.33 75.17L60.86 74.97L63.52 74.8L66.29 74.67L69.15 74.58L72.06 74.52L75 74.5L77.94 74.52L80.85 74.58L83.71 74.67L86.48 74.8L89.14 74.97L91.67 75.17L94.03 75.41L96.21 75.67L98.19 75.96L99.94 76.28L101.46 76.61L102.72 76.97L103.71 77.34L104.42 77.72L104.86 78.11L105 78.5M49 70L49 79M101 70L101 79M101 79L100.87 79.31L100.5 79.62L99.88 79.93L99.02 80.22L97.93 80.51L96.62 80.78L95.1 81.03L93.38 81.26L91.49 81.47L89.44 81.66L87.26 81.82L84.95 81.96L82.55 82.06L80.07 82.14L77.55 82.18L75 82.2L72.45 82.18L69.93 82.14L67.45 82.06L65.05 81.96L62.74 81.82L60.56 81.66L58.51 81.47L56.62 81.26L54.9 81.03L53.38 80.78L52.07 80.51L50.98 80.22L50.12 79.93L49.5 79.62L49.13 79.31L49 79L49.13 78.69L49.5 78.38L50.12 78.07L50.98 77.78L52.07 77.49L53.38 77.22L54.9 76.97L56.62 76.74L58.51 76.53L60.56 76.34L62.74 76.18L65.05 76.04L67.45 75.94L69.93 75.86L72.45 75.82L75 75.8L77.55 75.82L80.07 75.86L82.55 75.94L84.95 76.04L87.26 76.18L89.44 76.34L91.49 76.53L93.38 76.74L95.1 76.97L96.62 77.22L97.93 77.49L99.02 77.78L99.88 78.07L100.5 78.38L100.87 78.69L101 79M101 70L100.87 70.31L100.5 70.62L99.88 70.93L99.02 71.22L97.93 71.51L96.62 71.78L95.1 72.03L93.38 72.26L91.49 72.47L89.44 72.66L87.26 72.82L84.95 72.96L82.55 73.06L80.07 73.14L77.55 73.18L75 73.2L72.45 73.18L69.93 73.14L67.45 73.06L65.05 72.96L62.74 72.82L60.56 72.66L58.51 72.47L56.62 72.26L54.9 72.03L53.38 71.78L52.07 71.51L50.98 71.22L50.12 70.93L49.5 70.62L49.13 70.31L49 70L49.13 69.69L49.5 69.38L50.12 69.07L50.98 68.78L52.07 68.49L53.38 68.22L54.9 67.97L56.62 67.74L58.51 67.53L60.56 67.34L62.74 67.18L65.05 67.04L67.45 66.94L69.93 66.86L72.45 66.82L75 66.8L77.55 66.82L80.07 66.86L82.55 66.94L84.95 67.04L87.26 67.18L89.44 67.34L91.49 67.53L93.38 67.74L95.1 67.97L96.62 68.22L97.93 68.49L99.02 68.78L99.88 69.07L100.5 69.38L100.87 69.69L101 70M49 71.2L49.36 71.87L49.72 72.5L50.08 73.04L50.44 73.45L50.81 73.71L51.17 73.8L51.53 73.71L51.89 73.45L52.25 73.04L52.61 72.5L52.97 71.87L53.33 71.2L53.69 71.87L54.06 72.5L54.42 73.04L54.78 73.45L55.14 73.71L55.5 73.8L55.86 73.71L56.22 73.45L56.58 73.04L56.94 72.5L57.31 71.87L57.67 71.2L58.03 71.87L58.39 72.5L58.75 73.04L59.11 73.45L59.47 73.71L59.83 73.8L60.19 73.71L60.56 73.45L60.92 73.04L61.28 72.5L61.64 71.87L62 71.2L62.36 71.87L62.72 72.5L63.08 73.04L63.44 73.45L63.81 73.71L64.17 73.8L64.53 73.71L64.89 73.45L65.25 73.04L65.61 72.5L65.97 71.87L66.33 71.2L66.69 71.87L67.06 72.5L67.42 73.04L67.78 73.45L68.14 73.71L68.5 73.8L68.86 73.71L69.22 73.45L69.58 73.04L69.94 72.5L70.31 71.87L70.67 71.2L71.03 71.87L71.39 72.5L71.75 73.04L72.11 73.45L72.47 73.71L72.83 73.8L73.19 73.71L73.56 73.45L73.92 73.04L74.28 72.5L74.64 71.87L75 71.2L75.36 71.87L75.72 72.5L76.08 73.04L76.44 73.45L76.81 73.71L77.17 73.8L77.53 73.71L77.89 73.45L78.25 73.04L78.61 72.5L78.97 71.87L79.33 71.2L79.69 71.87L80.06 72.5L80.42 73.04L80.78 73.45L81.14 73.71L81.5 73.8L81.86 73.71L82.22 73.45L82.58 73.04L82.94 72.5L83.31 71.87L83.67 71.2L84.03 71.87L84.39 72.5L84.75 73.04L85.11 73.45L85.47 73.71L85.83 73.8L86.19 73.71L86.56 73.45L86.92 73.04L87.28 72.5L87.64 71.87L88 71.2L88.36 71.87L88.72 72.5L89.08 73.04L89.44 73.45L89.81 73.71L90.17 73.8L90.53 73.71L90.89 73.45L91.25 73.04L91.61 72.5L91.97 71.87L92.33 71.2L92.69 71.87L93.06 72.5L93.42 73.04L93.78 73.45L94.14 73.71L94.5 73.8L94.86 73.71L95.22 73.45L95.58 73.04L95.94 72.5L96.31 71.87L96.67 71.2L97.03 71.87L97.39 72.5L97.75 73.04L98.11 73.45L98.47 73.71L98.83 73.8L99.19 73.71L99.56 73.45L99.92 73.04L100.28 72.5L100.64 71.87L101 71.2M56.43 73.4L56.43 78.6M63.86 73.4L63.86 78.6M71.29 73.4L71.29 78.6M78.71 73.4L78.71 78.6M86.14 73.4L86.14 78.6M93.57 73.4L93.57 78.6M54 58L54 67M96 58L96 67M96 67L95.9 67.31L95.6 67.62L95.1 67.93L94.4 68.22L93.52 68.51L92.46 68.78L91.23 69.03L89.85 69.26L88.32 69.47L86.67 69.66L84.9 69.82L83.04 69.96L81.1 70.06L79.1 70.14L77.06 70.18L75 70.2L72.94 70.18L70.9 70.14L68.9 70.06L66.96 69.96L65.1 69.82L63.33 69.66L61.68 69.47L60.15 69.26L58.77 69.03L57.54 68.78L56.48 68.51L55.6 68.22L54.9 67.93L54.4 67.62L54.1 67.31L54 67L54.1 66.69L54.4 66.38L54.9 66.07L55.6 65.78L56.48 65.49L57.54 65.22L58.77 64.97L60.15 64.74L61.68 64.53L63.33 64.34L65.1 64.18L66.96 64.04L68.9 63.94L70.9 63.86L72.94 63.82L75 63.8L77.06 63.82L79.1 63.86L81.1 63.94L83.04 64.04L84.9 64.18L86.67 64.34L88.32 64.53L89.85 64.74L91.23 64.97L92.46 65.22L93.52 65.49L94.4 65.78L95.1 66.07L95.6 66.38L95.9 66.69L96 67M96 58L95.9 58.31L95.6 58.62L95.1 58.93L94.4 59.22L93.52 59.51L92.46 59.78L91.23 60.03L89.85 60.26L88.32 60.47L86.67 60.66L84.9 60.82L83.04 60.96L81.1 61.06L79.1 61.14L77.06 61.18L75 61.2L72.94 61.18L70.9 61.14L68.9 61.06L66.96 60.96L65.1 60.82L63.33 60.66L61.68 60.47L60.15 60.26L58.77 60.03L57.54 59.78L56.48 59.51L55.6 59.22L54.9 58.93L54.4 58.62L54.1 58.31L54 58L54.1 57.69L54.4 57.38L54.9 57.07L55.6 56.78L56.48 56.49L57.54 56.22L58.77 55.97L60.15 55.74L61.68 55.53L63.33 55.34L65.1 55.18L66.96 55.04L68.9 54.94L70.9 54.86L72.94 54.82L75 54.8L77.06 54.82L79.1 54.86L81.1 54.94L83.04 55.04L84.9 55.18L86.67 55.34L88.32 55.53L89.85 55.74L91.23 55.97L92.46 56.22L93.52 56.49L94.4 56.78L95.1 57.07L95.6 57.38L95.9 57.69L96 58M54 59.2L54.35 59.87L54.7 60.5L55.05 61.04L55.4 61.45L55.75 61.71L56.1 61.8L56.45 61.71L56.8 61.45L57.15 61.04L57.5 60.5L57.85 59.87L58.2 59.2L58.55 59.87L58.9 60.5L59.25 61.04L59.6 61.45L59.95 61.71L60.3 61.8L60.65 61.71L61 61.45L61.35 61.04L61.7 60.5L62.05 59.87L62.4 59.2L62.75 59.87L63.1 60.5L63.45 61.04L63.8 61.45L64.15 61.71L64.5 61.8L64.85 61.71L65.2 61.45L65.55 61.04L65.9 60.5L66.25 59.87L66.6 59.2L66.95 59.87L67.3 60.5L67.65 61.04L68 61.45L68.35 61.71L68.7 61.8L69.05 61.71L69.4 61.45L69.75 61.04L70.1 60.5L70.45 59.87L70.8 59.2L71.15 59.87L71.5 60.5L71.85 61.04L72.2 61.45L72.55 61.71L72.9 61.8L73.25 61.71L73.6 61.45L73.95 61.04L74.3 60.5L74.65 59.87L75 59.2L75.35 59.87L75.7 60.5L76.05 61.04L76.4 61.45L76.75 61.71L77.1 61.8L77.45 61.71L77.8 61.45L78.15 61.04L78.5 60.5L78.85 59.87L79.2 59.2L79.55 59.87L79.9 60.5L80.25 61.04L80.6 61.45L80.95 61.71L81.3 61.8L81.65 61.71L82 61.45L82.35 61.04L82.7 60.5L83.05 59.87L83.4 59.2L83.75 59.87L84.1 60.5L84.45 61.04L84.8 61.45L85.15 61.71L85.5 61.8L85.85 61.71L86.2 61.45L86.55 61.04L86.9 60.5L87.25 59.87L87.6 59.2L87.95 59.87L88.3 60.5L88.65 61.04L89 61.45L89.35 61.71L89.7 61.8L90.05 61.71L90.4 61.45L90.75 61.04L91.1 60.5L91.45 59.87L91.8 59.2L92.15 59.87L92.5 60.5L92.85 61.04L93.2 61.45L93.55 61.71L93.9 61.8L94.25 61.71L94.6 61.45L94.95 61.04L95.3 60.5L95.65 59.87L96 59.2M60 61.4L60 66.6M66 61.4L66 66.6M72 61.4L72 66.6M78 61.4L78 66.6M84 61.4L84 66.6M90 61.4L90 66.6M59 46L59 55M91 46L91 55M91 55L90.92 55.31L90.69 55.62L90.31 55.93L89.78 56.22L89.11 56.51L88.3 56.78L87.37 57.03L86.31 57.26L85.15 57.47L83.89 57.66L82.54 57.82L81.12 57.96L79.64 58.06L78.12 58.14L76.57 58.18L75 58.2L73.43 58.18L71.88 58.14L70.36 58.06L68.88 57.96L67.46 57.82L66.11 57.66L64.85 57.47L63.69 57.26L62.63 57.03L61.7 56.78L60.89 56.51L60.22 56.22L59.69 55.93L59.31 55.62L59.08 55.31L59 55L59.08 54.69L59.31 54.38L59.69 54.07L60.22 53.78L60.89 53.49L61.7 53.22L62.63 52.97L63.69 52.74L64.85 52.53L66.11 52.34L67.46 52.18L68.88 52.04L70.36 51.94L71.88 51.86L73.43 51.82L75 51.8L76.57 51.82L78.12 51.86L79.64 51.94L81.12 52.04L82.54 52.18L83.89 52.34L85.15 52.53L86.31 52.74L87.37 52.97L88.3 53.22L89.11 53.49L89.78 53.78L90.31 54.07L90.69 54.38L90.92 54.69L91 55M91 46L90.92 46.31L90.69 46.62L90.31 46.93L89.78 47.22L89.11 47.51L88.3 47.78L87.37 48.03L86.31 48.26L85.15 48.47L83.89 48.66L82.54 48.82L81.12 48.96L79.64 49.06L78.12 49.14L76.57 49.18L75 49.2L73.43 49.18L71.88 49.14L70.36 49.06L68.88 48.96L67.46 48.82L66.11 48.66L64.85 48.47L63.69 48.26L62.63 48.03L61.7 47.78L60.89 47.51L60.22 47.22L59.69 46.93L59.31 46.62L59.08 46.31L59 46L59.08 45.69L59.31 45.38L59.69 45.07L60.22 44.78L60.89 44.49L61.7 44.22L62.63 43.97L63.69 43.74L64.85 43.53L66.11 43.34L67.46 43.18L68.88 43.04L70.36 42.94L71.88 42.86L73.43 42.82L75 42.8L76.57 42.82L78.12 42.86L79.64 42.94L81.12 43.04L82.54 43.18L83.89 43.34L85.15 43.53L86.31 43.74L87.37 43.97L88.3 44.22L89.11 44.49L89.78 44.78L90.31 45.07L90.69 45.38L90.92 45.69L91 46M59 47.2L59.38 47.87L59.76 48.5L60.14 49.04L60.52 49.45L60.9 49.71L61.29 49.8L61.67 49.71L62.05 49.45L62.43 49.04L62.81 48.5L63.19 47.87L63.57 47.2L63.95 47.87L64.33 48.5L64.71 49.04L65.1 49.45L65.48 49.71L65.86 49.8L66.24 49.71L66.62 49.45L67 49.04L67.38 48.5L67.76 47.87L68.14 47.2L68.52 47.87L68.9 48.5L69.29 49.04L69.67 49.45L70.05 49.71L70.43 49.8L70.81 49.71L71.19 49.45L71.57 49.04L71.95 48.5L72.33 47.87L72.71 47.2L73.1 47.87L73.48 48.5L73.86 49.04L74.24 49.45L74.62 49.71L75 49.8L75.38 49.71L75.76 49.45L76.14 49.04L76.52 48.5L76.9 47.87L77.29 47.2L77.67 47.87L78.05 48.5L78.43 49.04L78.81 49.45L79.19 49.71L79.57 49.8L79.95 49.71L80.33 49.45L80.71 49.04L81.1 48.5L81.48 47.87L81.86 47.2L82.24 47.87L82.62 48.5L83 49.04L83.38 49.45L83.76 49.71L84.14 49.8L84.52 49.71L84.9 49.45L85.29 49.04L85.67 48.5L86.05 47.87L86.43 47.2L86.81 47.87L87.19 48.5L87.57 49.04L87.95 49.45L88.33 49.71L88.71 49.8L89.1 49.71L89.48 49.45L89.86 49.04L90.24 48.5L90.62 47.87L91 47.2M63.57 49.4L63.57 54.6M68.14 49.4L68.14 54.6M72.71 49.4L72.71 54.6M77.29 49.4L77.29 54.6M81.86 49.4L81.86 54.6M86.43 49.4L86.43 54.6M65 37L67 37L67 46L65 46L65 37M65 40L67 40M65 42.6L67 42.6M66 37L64.5 34.5L66 31.5L67.5 34.5L66 37M66.7 34.4L66.67 34.77L66.57 35.11L66.41 35.37L66.22 35.54L66 35.6L65.78 35.54L65.59 35.37L65.43 35.11L65.33 34.77L65.3 34.4L65.33 34.03L65.43 33.69L65.59 33.43L65.78 33.26L66 33.2L66.22 33.26L66.41 33.43L66.57 33.69L66.67 34.03L66.7 34.4M69.5 37L71.5 37L71.5 46L69.5 46L69.5 37M69.5 40L71.5 40M69.5 42.6L71.5 42.6M70.5 37L69 34.5L70.5 31.5L72 34.5L70.5 37M71.2 34.4L71.17 34.77L71.07 35.11L70.91 35.37L70.72 35.54L70.5 35.6L70.28 35.54L70.09 35.37L69.93 35.11L69.83 34.77L69.8 34.4L69.83 34.03L69.93 33.69L70.09 33.43L70.28 33.26L70.5 33.2L70.72 33.26L70.91 33.43L71.07 33.69L71.17 34.03L71.2 34.4M74 37L76 37L76 46L74 46L74 37M74 40L76 40M74 42.6L76 42.6M75 37L73.5 34.5L75 31.5L76.5 34.5L75 37M75.7 34.4L75.67 34.77L75.57 35.11L75.41 35.37L75.22 35.54L75 35.6L74.78 35.54L74.59 35.37L74.43 35.11L74.33 34.77L74.3 34.4L74.33 34.03L74.43 33.69L74.59 33.43L74.78 33.26L75 33.2L75.22 33.26L75.41 33.43L75.57 33.69L75.67 34.03L75.7 34.4M78.5 37L80.5 37L80.5 46L78.5 46L78.5 37M78.5 40L80.5 40M78.5 42.6L80.5 42.6M79.5 37L78 34.5L79.5 31.5L81 34.5L79.5 37M80.2 34.4L80.17 34.77L80.07 35.11L79.91 35.37L79.72 35.54L79.5 35.6L79.28 35.54L79.09 35.37L78.93 35.11L78.83 34.77L78.8 34.4L78.83 34.03L78.93 33.69L79.09 33.43L79.28 33.26L79.5 33.2L79.72 33.26L79.91 33.43L80.07 33.69L80.17 34.03L80.2 34.4M83 37L85 37L85 46L83 46L83 37M83 40L85 40M83 42.6L85 42.6M84 37L82.5 34.5L84 31.5L85.5 34.5L84 37M84.7 34.4L84.67 34.77L84.57 35.11L84.41 35.37L84.22 35.54L84 35.6L83.78 35.54L83.59 35.37L83.43 35.11L83.33 34.77L83.3 34.4L83.33 34.03L83.43 33.69L83.59 33.43L83.78 33.26L84 33.2L84.22 33.26L84.41 33.43L84.57 33.69L84.67 34.03L84.7 34.4M26.2 26L29 26M25.1 27.91L26.5 30.33M22.9 27.91L21.5 30.33M21.8 26L19 26M22.9 24.09L21.5 21.67M25.1 24.09L26.5 21.67M25.4 26L25.26 26.61L24.87 27.09L24.31 27.36L23.69 27.36L23.13 27.09L22.74 26.61L22.6 26L22.74 25.39L23.13 24.91L23.69 24.64L24.31 24.64L24.87 24.91L25.26 25.39L25.4 26M128.03 26.86L130.61 27.95M126.27 28.18L126.62 30.96M124.24 27.33L122.01 29.01M123.97 25.14L121.39 24.05M125.73 23.82L125.38 21.04M127.76 24.67L129.99 22.99M127.4 26L127.26 26.61L126.87 27.09L126.31 27.36L125.69 27.36L125.13 27.09L124.74 26.61L124.6 26L124.74 25.39L125.13 24.91L125.69 24.64L126.31 24.64L126.87 24.91L127.26 25.39L127.4 26M21.53 59.58L23.48 61.59M19.4 60.12L18.64 62.81M17.87 58.54L15.15 59.22M18.47 56.42L16.52 54.41M20.6 55.88L21.36 53.19M22.13 57.46L24.85 56.78M21.4 58L21.26 58.61L20.87 59.09L20.31 59.36L19.69 59.36L19.13 59.09L18.74 58.61L18.6 58L18.74 57.39L19.13 56.91L19.69 56.64L20.31 56.64L20.87 56.91L21.26 57.39L21.4 58M130.8 60.05L131.81 62.66M128.62 59.72L126.87 61.9M127.83 57.67L125.06 57.24M129.2 55.95L128.19 53.34M131.38 56.28L133.13 54.1M132.17 58.33L134.94 58.76M131.4 58L131.26 58.61L130.87 59.09L130.31 59.36L129.69 59.36L129.13 59.09L128.74 58.61L128.6 58L128.74 57.39L129.13 56.91L129.69 56.64L130.31 56.64L130.87 56.91L131.26 57.39L131.4 58M37.94 20.2L37.85 23M36.06 19.04L33.6 20.37M36.13 16.84L33.74 15.37M38.06 15.8L38.15 13M39.94 16.96L42.4 15.63M39.87 19.16L42.26 20.63M39.4 18L39.26 18.61L38.87 19.09L38.31 19.36L37.69 19.36L37.13 19.09L36.74 18.61L36.6 18L36.74 17.39L37.13 16.91L37.69 16.64L38.31 16.64L38.87 16.91L39.26 17.39L39.4 18M111.08 20L109.92 22.55M109.81 18.21L107.02 18.47M110.73 16.21L109.1 13.92M112.92 16L114.08 13.45M114.19 17.79L116.98 17.53M113.27 19.79L114.9 22.08M113.4 18L113.26 18.61L112.87 19.09L112.31 19.36L111.69 19.36L111.13 19.09L110.74 18.61L110.6 18L110.74 17.39L111.13 16.91L111.69 16.64L112.31 16.64L112.87 16.91L113.26 17.39L113.4 18"/></svg></div>
+          <div class="stats">
+            <div class="st"><span>Paths</span><b>527</b></div>
+            <div class="st"><span>Draw</span><b>4.24 m</b></div>
+            <div class="st"><span>Travel</span><b>2.91 m</b></div>
+            <div class="st"><span>Pen lifts</span><b>527</b></div>
+            <div class="st hi"><span>Estimate</span><b>9m 14s</b></div>
+          </div>
+        </div>
+
+        <div class="runbar">
+          <div class="rb"><div class="rbtop"><span class="n">Plotting</span><span class="p">34%</span>
+            <span class="r">path 179 / 527 · 6m 02s left</span></div>
+            <div class="bar"><i style="width:34%"></i></div></div>
+          <button class="rbtn">Pause</button>
+          <label class="rbtn stop" for="running">Cancel</label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

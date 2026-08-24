@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+mkcard - greeting card layout with auto-sized single-stroke text.
+
+Give it the DRAWABLE area (card size minus the margin you will pass to
+`plot`) and it fills that area with the largest text that fits, wrapping to
+the column width. Optionally reserves a column for a drawn cake.
+
+  mkcard --width 110 --height 60                 text + cake
+  mkcard --width 110 --height 60 --no-cake       text only, biggest possible
+  mkcard --width 110 --height 60 --cake-frac 0.22
+
+Then:  plot ~/plotter/art/card.svg -m 20
+(margin must match whatever you subtracted to get --width/--height)
+"""
+import argparse
+import math
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+VPYPE = str(HOME / ".local" / "bin" / "vpype")
+ARTDIR = HOME / "plotter" / "art"
+
+PARAGRAPHS = [
+    "Ella,",
+    "Happy 6th Birthday! Hope your day is absolutely fin-tastic "
+    "and you get all the cake a mermaid can handle.",
+    "Love, Kevin and Adamar Wagner",
+]
+
+# Hershey futural advances at roughly this fraction of nominal size.
+CHAR_W = 0.52
+LINE_PITCH = 1.55
+PARA_GAP = 0.75
+
+
+def wrap(text, cols):
+    if cols < 4:
+        return None
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        if not cur:
+            cur = w
+        elif len(cur) + 1 + len(w) <= cols:
+            cur += " " + w
+        else:
+            lines.append(cur)
+            cur = w
+        if len(w) > cols:
+            return None
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def layout_text(paras, tw, th):
+    """Largest size whose wrapped text fits tw x th. Returns (size, lines)."""
+    best = None
+    s = 0.8
+    while s < 40.0:
+        cols = int(tw / (CHAR_W * s))
+        blocks = [wrap(p, cols) for p in paras]
+        if any(b is None for b in blocks):
+            break
+        nlines = sum(len(b) for b in blocks)
+        height = (nlines - 1) * LINE_PITCH * s + (len(blocks) - 1) * PARA_GAP * s + s
+        widest = max(max(len(l) for l in b) for b in blocks) * CHAR_W * s
+        if height <= th and widest <= tw:
+            best = (s, blocks)
+            s += 0.1
+        else:
+            break
+    return best
+
+
+def arc(cx, cy, r, a0, a1, steps=44):
+    return [(cx + r * math.cos(a0 + (a1 - a0) * i / steps),
+             cy + r * math.sin(a0 + (a1 - a0) * i / steps)) for i in range(steps + 1)]
+
+
+def cake(cx, cy, w, h):
+    out = []
+    tau = math.tau
+    out.append([(cx - w * 0.60, cy), (cx + w * 0.60, cy)])
+    out.append(arc(cx, cy - h * 0.015, w * 0.52, math.radians(202), math.radians(338), 32))
+
+    bw, bh = w * 0.46, h * 0.26
+    by = cy - bh
+    out.append([(cx - bw, cy), (cx - bw, by), (cx + bw, by), (cx + bw, cy)])
+    d = []
+    for i in range(8):
+        d.append((cx - bw + 2 * bw * i / 7.0, by))
+        if i < 7:
+            d.append((cx - bw + 2 * bw * (i + 0.5) / 7.0, by + h * 0.05))
+    out.append(d)
+
+    tw2, th2 = w * 0.30, h * 0.21
+    ty = by - th2
+    out.append([(cx - tw2, by), (cx - tw2, ty), (cx + tw2, ty), (cx + tw2, by)])
+    d2 = []
+    for i in range(6):
+        d2.append((cx - tw2 + 2 * tw2 * i / 5.0, ty))
+        if i < 5:
+            d2.append((cx - tw2 + 2 * tw2 * (i + 0.5) / 5.0, ty + h * 0.042))
+    out.append(d2)
+
+    for i in range(3):
+        out.append(arc(cx - bw * 0.55 + i * bw * 0.55, cy - bh * 0.48, w * 0.026, 0, tau, 16))
+
+    r6 = h * 0.10
+    sx, sy = cx, ty - r6 * 1.25
+    out.append(arc(sx, sy, r6, 0, tau, 32))
+    tail = arc(sx, sy, r6 * 2.1, math.radians(122), math.radians(58), 26)
+    out.append(tail)
+    fx, fy = tail[-1]
+    fy -= h * 0.010
+    flame = []
+    for i in range(33):
+        t = i / 32.0 * tau
+        rr = h * 0.028 * (1.0 - 0.55 * math.cos(t))
+        flame.append((fx + rr * math.sin(t) * 0.60, fy - rr * (1 + math.cos(t)) * 0.5))
+    out.append(flame)
+    return out
+
+
+def write_svg(polys, width, height, path):
+    parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="%gmm" height="%gmm" viewBox="0 0 %g %g">'
+             % (width, height, width, height)]
+    for pts in polys:
+        d = "M " + " L ".join("%.3f %.3f" % (x, y) for x, y in pts)
+        parts.append('<path d="%s" fill="none" stroke="black" stroke-width="0.3"/>' % d)
+    parts.append("</svg>")
+    path.write_text("\n".join(parts))
+
+
+def main():
+    ap = argparse.ArgumentParser(description="greeting card with auto-sized text")
+    ap.add_argument("--width", type=float, required=True, help="drawable width, mm")
+    ap.add_argument("--height", type=float, required=True, help="drawable height, mm")
+    ap.add_argument("--font", default="futural")
+    ap.add_argument("--cake-frac", type=float, default=0.26,
+                    help="fraction of width reserved for the cake")
+    ap.add_argument("--no-cake", action="store_true")
+    ap.add_argument("--cake-svg", default=None,
+                    help="use an external SVG for the cake instead of the drawn one")
+    ap.add_argument("--min-seg", default="1.2mm",
+                    help="drop fragments shorter than this from --cake-svg")
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    W, H = args.width, args.height
+    ARTDIR.mkdir(parents=True, exist_ok=True)
+    out = Path(args.out).expanduser() if args.out else ARTDIR / "card.svg"
+    cake_svg = ARTDIR / "_card_cake.svg"
+
+    cf = 0.0 if args.no_cake else args.cake_frac
+    tw = W * (1.0 - cf) * 0.96
+    th = H * 0.96
+
+    got = layout_text(PARAGRAPHS, tw, th)
+    if not got:
+        print("text will not fit that area", file=sys.stderr)
+        sys.exit(1)
+    size, blocks = got
+
+    nlines = sum(len(b) for b in blocks)
+    block_h = (nlines - 1) * LINE_PITCH * size + (len(blocks) - 1) * PARA_GAP * size
+    y = (H - block_h) / 2.0
+    text_cx = (W * (1.0 - cf)) / 2.0
+
+    placed = []
+    for bi, b in enumerate(blocks):
+        for line in b:
+            placed.append((line, y))
+            y += LINE_PITCH * size
+        if bi < len(blocks) - 1:
+            y += PARA_GAP * size
+
+    cw = W * cf * 0.88
+    ch = min(H * 0.86, cw * 1.5)
+
+    if args.cake_svg and not args.no_cake:
+        # stage the external art into a page exactly the size of the cake
+        # column, so a plain translate then drops it in the right place
+        col = ARTDIR / "_card_cake_col.svg"
+        stage = [VPYPE, "read", str(Path(args.cake_svg).expanduser()),
+                 "linesimplify", "-t", "0.25mm",
+                 "filter", "--min-length", args.min_seg,
+                 "scaleto", "%gmm" % cw, "%gmm" % ch,
+                 "layout", "-h", "center", "-v", "center",
+                 "%gmmx%gmm" % (cw, ch),
+                 "write", "--page-size", "%gmmx%gmm" % (cw, ch), str(col)]
+        r = subprocess.run(stage, capture_output=True, text=True)
+        if r.returncode != 0:
+            print("vpype (cake stage) failed:", r.stdout, r.stderr, file=sys.stderr)
+            sys.exit(1)
+        write_svg([], W, H, cake_svg)
+        cmd = [VPYPE, "read", str(cake_svg),
+               "read", str(col),
+               "translate", "%gmm" % (W - cw - W * cf * 0.06), "%gmm" % ((H - ch) / 2.0)]
+    else:
+        polys = [] if args.no_cake else cake(W - W * cf / 2.0, H * 0.5 + ch * 0.5, cw, ch)
+        write_svg(polys, W, H, cake_svg)
+        cmd = [VPYPE, "read", str(cake_svg)]
+    for line, ly in placed:
+        cmd += ["text", "-f", args.font, "-s", "%gmm" % size,
+                "-p", "%gmm" % text_cx, "%gmm" % ly, "-a", "center", line]
+    cmd += ["write", "--page-size", "%gmmx%gmm" % (W, H), str(out)]
+
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        print("vpype failed:\n" + res.stdout + "\n" + res.stderr, file=sys.stderr)
+        sys.exit(1)
+    print("drawable %.0f x %.0f mm | text %.1f mm | %d lines | cake %s"
+          % (W, H, size, nlines, "no" if args.no_cake else "yes"))
+    print("  -> %s" % out)
+
+
+if __name__ == "__main__":
+    main()

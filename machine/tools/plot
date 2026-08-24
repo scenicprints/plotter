@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""
+plot - one command from SVG to plotted, for the CR-6 pen plotter.
+
+The machine origin is the CENTRE of the paper (set with PLOT_P1/PLOT_P2),
+so plots land centred regardless of sheet size, orientation or placement.
+
+  plot art.svg                  dry run + preview, paper size read from machine
+  plot art.svg --go             generate, upload and start the real plot
+  plot art.svg --pen micron     pen speed profile
+  plot art.svg --size 180x240   override the paper size, in mm
+
+Pipeline: read -> layout -> linemerge -> linesort -> reloop -> linesimplify
+          -> gwrite -> centre -> preview -> estimate -> upload
+"""
+import argparse
+import json
+import math
+import re
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+TOOLS = HOME / "plotter" / "tools"
+VPYPE = str(HOME / ".local" / "bin" / "vpype")
+PROFILE = TOOLS / "plotter.toml"
+PENS = TOOLS / "pens.toml"
+MOONRAKER = "http://localhost:7125"
+OUTDIR = HOME / "printer_data" / "gcodes"
+STATE = HOME / ".plot_seen.json"
+
+PAPERS = {
+    "letter": (215.9, 279.4),
+    "a4": (210.0, 297.0),
+    "a3": (297.0, 420.0),
+    "a5": (148.0, 210.0),
+    "bed": (215.0, 215.0),
+}
+
+MOVE_RE = re.compile(r"^(G[01]) X(-?[\d.]+) Y(-?[\d.]+) F(\d+)$")
+
+
+def die(msg):
+    print("error: " + msg, file=sys.stderr)
+    sys.exit(1)
+
+
+def load_pens():
+    try:
+        import tomllib
+        return tomllib.loads(PENS.read_text())
+    except Exception as exc:
+        die("cannot read " + str(PENS) + ": " + str(exc))
+
+
+def seen_before(svg):
+    try:
+        data = json.loads(STATE.read_text())
+    except Exception:
+        data = {}
+    key = str(Path(svg).resolve())
+    was = key in data
+    data[key] = True
+    try:
+        STATE.write_text(json.dumps(data))
+    except Exception:
+        pass
+    return was
+
+
+def paper_from_machine():
+    """Ask Klipper for the paper size recorded by PLOT_P2."""
+    try:
+        url = MOONRAKER + "/printer/objects/query?gcode_macro%20_PLOT_VARS"
+        raw = urllib.request.urlopen(url, timeout=10).read()
+        st = json.loads(raw)["result"]["status"]["gcode_macro _PLOT_VARS"]
+        w = float(st.get("paper_w", 0))
+        h = float(st.get("paper_h", 0))
+        if w > 10 and h > 10:
+            return (w, h)
+    except Exception:
+        pass
+    return None
+
+
+def run_vpype(svg, gcode, paper, margin, optimize, verbose):
+    cmd = [VPYPE, "--config", str(PROFILE), "read", str(svg)]
+    if paper:
+        w, h = PAPERS[paper]
+        cmd += ["layout", "-m", str(margin) + "mm"]
+        # vpype enforces portrait unless told otherwise, which would silently
+        # lay a landscape sheet out as portrait and knock the centring off.
+        if w > h:
+            cmd += ["--landscape"]
+        cmd += [str(w) + "mmx" + str(h) + "mm"]
+    if optimize:
+        cmd += [
+            "linemerge", "-t", "0.5mm",
+            "linesort", "--two-opt",
+            "reloop",
+            "linesimplify", "-t", "0.1mm",
+        ]
+    cmd += ["gwrite", "-p", "plotter", str(gcode)]
+    if verbose:
+        print("  " + " ".join(cmd))
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        die("vpype failed:\n" + res.stdout + "\n" + res.stderr)
+
+
+def postprocess(gcode, draw, travel, centre):
+    """Apply per-pen feedrates and shift so 0,0 is the middle of the paper.
+
+    Runs after gwrite, so it sits on top of the profile's vertical flip
+    rather than fighting it.
+    """
+    dx, dy = centre if centre else (0.0, 0.0)
+    out = []
+    for line in gcode.read_text().splitlines():
+        m = MOVE_RE.match(line.strip())
+        if not m:
+            out.append(line)
+            continue
+        g = m.group(1)
+        x = float(m.group(2)) - dx
+        y = float(m.group(3)) - dy
+        f = travel if g == "G0" else draw
+        out.append("%s X%.3f Y%.3f F%d" % (g, x, y, f))
+    gcode.write_text("\n".join(out) + "\n")
+
+
+def make_dry(gcode, dry_path):
+    out = []
+    for line in gcode.read_text().splitlines():
+        if line.strip() == "PEN_DOWN":
+            out.append("; PEN_DOWN suppressed (dry run)")
+        else:
+            out.append(line)
+    dry_path.write_text("\n".join(out) + "\n")
+
+
+def parse_moves(gcode):
+    x = 0.0
+    y = 0.0
+    started = False
+    pen_down = False
+    draw = []
+    travel = []
+    minx = miny = 1e9
+    maxx = maxy = -1e9
+    for line in gcode.read_text().splitlines():
+        s = line.strip()
+        if s.startswith("PEN_DOWN"):
+            pen_down = True
+            continue
+        if s.startswith("PEN_UP"):
+            pen_down = False
+            continue
+        m = MOVE_RE.match(s)
+        if not m:
+            continue
+        nx = float(m.group(2))
+        ny = float(m.group(3))
+        if started:
+            if pen_down:
+                draw.append((x, y, nx, ny))
+            else:
+                travel.append((x, y, nx, ny))
+        minx = min(minx, nx)
+        maxx = max(maxx, nx)
+        miny = min(miny, ny)
+        maxy = max(maxy, ny)
+        x = nx
+        y = ny
+        started = True
+    if minx > maxx:
+        minx = miny = maxx = maxy = 0.0
+    return draw, travel, (minx, miny, maxx, maxy)
+
+
+def write_preview(draw, travel, bbox, path, paper):
+    if paper:
+        pw, ph = PAPERS[paper]
+    else:
+        pw = max(bbox[2] - bbox[0], 1.0)
+        ph = max(bbox[3] - bbox[1], 1.0)
+    pad = 10.0
+    width = pw + 2 * pad
+    height = ph + 2 * pad
+    ox = pw / 2.0
+    oy = ph / 2.0
+
+    def seg(s, color, stroke, opacity):
+        return (
+            '<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="%s" stroke-width="%s" opacity="%s"/>'
+            % (s[0] + ox + pad, ph - (s[1] + oy) + pad,
+               s[2] + ox + pad, ph - (s[3] + oy) + pad,
+               color, stroke, opacity)
+        )
+
+    parts = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="%.1fmm" height="%.1fmm" viewBox="0 0 %.1f %.1f">'
+        % (width, height, width, height),
+        '<rect x="0" y="0" width="%.1f" height="%.1f" fill="#f6f5f2"/>' % (width, height),
+        '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="#ffffff" stroke="#bbbbbb" stroke-width="0.3"/>'
+        % (pad, pad, pw, ph),
+        '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="#cc4444" stroke-width="0.3" opacity="0.7"/>'
+        % (pad + ox - 4, pad + oy, pad + ox + 4, pad + oy),
+        '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="#cc4444" stroke-width="0.3" opacity="0.7"/>'
+        % (pad + ox, pad + oy - 4, pad + ox, pad + oy + 4),
+    ]
+    for s in travel:
+        parts.append(seg(s, "#d08a30", "0.15", "0.55"))
+    for s in draw:
+        parts.append(seg(s, "#112233", "0.4", "1"))
+    parts.append(
+        '<text x="%.1f" y="%.1f" font-family="sans-serif" font-size="4" fill="#666666">draw = dark, travel = orange, red cross = origin</text>'
+        % (pad, pad - 3)
+    )
+    parts.append("</svg>")
+    path.write_text("\n".join(parts))
+
+
+def estimate(draw, travel, draw_f, travel_f, lift_s=0.30):
+    dd = sum(math.hypot(s[2] - s[0], s[3] - s[1]) for s in draw)
+    dt = sum(math.hypot(s[2] - s[0], s[3] - s[1]) for s in travel)
+    secs = dd / (draw_f / 60.0) + dt / (travel_f / 60.0) + len(travel) * lift_s
+    return dd, dt, len(travel), secs
+
+
+def upload(path, start):
+    boundary = "----plotcli"
+    head = (
+        "--" + boundary + "\r\n"
+        'Content-Disposition: form-data; name="file"; filename="' + path.name + '"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n"
+    ).encode()
+    body = head + path.read_bytes() + ("\r\n--" + boundary + "--\r\n").encode()
+    req = urllib.request.Request(
+        MOONRAKER + "/server/files/upload",
+        data=body,
+        headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=60).read()
+    except Exception as exc:
+        die("upload failed: " + str(exc))
+    print("  uploaded    : " + path.name)
+    if start:
+        req = urllib.request.Request(
+            MOONRAKER + "/printer/print/start?filename=" + path.name, method="POST"
+        )
+        try:
+            urllib.request.urlopen(req, timeout=30).read()
+            print("  job started")
+        except Exception as exc:
+            die("start failed: " + str(exc))
+
+
+def main():
+    ap = argparse.ArgumentParser(description="SVG to plotted, for the CR-6 pen plotter")
+    ap.add_argument("svg")
+    ap.add_argument("--pen", default="bic", help="pen speed profile (see pens.toml)")
+    ap.add_argument("--paper", default="bed", choices=list(PAPERS) + ["none"])
+    ap.add_argument("--size", default=None,
+                    help="paper as WxH in mm, e.g. --size 180x240 (overrides --paper)")
+    ap.add_argument("-m", "--margin", type=float, default=10.0, help="margin in mm")
+    ap.add_argument("--go", action="store_true", help="upload and start the real plot")
+    ap.add_argument("--upload", action="store_true", help="upload but do not start")
+    ap.add_argument("--no-optimize", action="store_true")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args()
+
+    svg = Path(args.svg).expanduser()
+    if not svg.exists():
+        die("no such file: " + str(svg))
+    pens = load_pens()
+    if args.pen not in pens:
+        die("unknown pen " + args.pen + ". known: " + ", ".join(pens))
+    pen = pens[args.pen]
+
+    measured_note = ""
+    if args.size:
+        try:
+            w, h = args.size.lower().split("x")
+            PAPERS["custom"] = (float(w), float(h))
+            args.paper = "custom"
+        except Exception:
+            die("bad --size, expected WxH in mm, e.g. 180x240")
+    elif args.paper == "bed":
+        measured = paper_from_machine()
+        if measured:
+            PAPERS["measured"] = measured
+            args.paper = "measured"
+            measured_note = "  (measured by PLOT_P1/PLOT_P2)"
+
+    paper = None if args.paper == "none" else args.paper
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+
+    gcode = OUTDIR / (svg.stem + ".gcode")
+    dry = OUTDIR / (svg.stem + "-dryrun.gcode")
+    preview = svg.with_suffix(".preview.svg")
+
+    print("plot: %s  pen=%s  margin=%gmm" % (svg.name, args.pen, args.margin))
+    if paper:
+        pw, ph = PAPERS[paper]
+        print("  paper       : %.1f x %.1f mm%s" % (pw, ph, measured_note))
+
+    run_vpype(svg, gcode, paper, args.margin, not args.no_optimize, args.verbose)
+
+    centre = None
+    if paper:
+        pw, ph = PAPERS[paper]
+        centre = (pw / 2.0, ph / 2.0)
+    postprocess(gcode, pen["draw"], pen["travel"], centre)
+
+    draw, travel, bbox = parse_moves(gcode)
+    write_preview(draw, travel, bbox, preview, paper)
+    dd, dt, lifts, secs = estimate(draw, travel, pen["draw"], pen["travel"])
+
+    print("  paths       : %d" % lifts)
+    print("  pen-down    : %.1f m" % (dd / 1000.0))
+    print("  pen-up      : %.1f m" % (dt / 1000.0))
+    print("  extent      : %.1f x %.1f mm" % (bbox[2] - bbox[0], bbox[3] - bbox[1]))
+    print("  from centre : X %.1f..%.1f   Y %.1f..%.1f" % (bbox[0], bbox[2], bbox[1], bbox[3]))
+    print("  estimate    : %dm %ds" % (secs // 60, secs % 60))
+    print("  preview     : %s" % preview)
+
+    first_time = not seen_before(svg)
+    if args.go and first_time:
+        print("")
+        print("  This file has never been dry-run. Doing a dry run instead.")
+        print("  Check the preview, then run with --go again to plot for real.")
+        args.go = False
+
+    if args.go:
+        print("  gcode       : %s" % gcode.name)
+        upload(gcode, start=True)
+    elif args.upload:
+        upload(gcode, start=False)
+    else:
+        make_dry(gcode, dry)
+        print("  dry run     : %s  (pen never lowers)" % dry.name)
+        upload(dry, start=False)
+        print("")
+        print("  Look at the preview, then:  plot %s --go" % svg.name)
+
+
+if __name__ == "__main__":
+    main()

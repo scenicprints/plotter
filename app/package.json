@@ -1,0 +1,46 @@
+{
+  "name": "plotter",
+  "productName": "Plotter",
+  "version": "1.0.0",
+  "description": "CR-6 SE pen plotter control",
+  "author": "Kevin Wagner",
+  "license": "UNLICENSED",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test-geom.js && node test-trace.js && node test-text.js && node test-core.js",
+    "dist": "electron-builder --win",
+    "serve": "node serve-dist.js"
+  },
+  "build": {
+    "appId": "com.kevinwagner.plotter",
+    "productName": "Plotter",
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "Plotter.exe"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "compression": "maximum"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3"
+  }
+}
