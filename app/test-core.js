@@ -1,7 +1,7 @@
 const fs=require('fs'),path=require('path');
 const {build,toGcode}=require('./src/core/pipeline');
 const {readSVG}=require('./src/core/svgdoc');
-const DIR='C:/Users/jkevi/plotter';
+const DIR=path.join(__dirname,'..','machine','art');
 for(const f of ['art-cake-outline.svg','art-calibration.svg']){
   const src=fs.readFileSync(path.join(DIR,f),'utf8');
   const t0=Date.now();
