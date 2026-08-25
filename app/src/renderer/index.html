@@ -180,10 +180,11 @@
             </button>
             <div class="tracebox hide" id="traceBox">
               <div class="tlab">Tracing<small id="traceInfo">reading the drawing</small></div>
+              <button class="tog on" id="togOutline"><span class="sw"></span><span class="tt">Outline (line art)<small>Traces the edges of the drawing — faithful for coloring-book line art. Off uses centreline + fills, better for single-weight pen work.</small></span></button>
               <div class="frow">
                 <div class="f"><label>Threshold 0 = auto</label><input id="traceThreshold" type="number" step="1" min="0" max="254" value="0"></div>
-                <div class="f"><label>Fill over mm</label><input id="traceFillWidth" type="number" step="0.1" min="0.2" value="0.9"></div>
-                <div class="f"><label>Pen mm</label><input id="tracePen" type="number" step="0.05" min="0.05" value="0.3"></div>
+                <div class="f" id="fFillWidth"><label>Fill over mm</label><input id="traceFillWidth" type="number" step="0.1" min="0.2" value="0.9"></div>
+                <div class="f" id="fPen"><label>Pen mm</label><input id="tracePen" type="number" step="0.05" min="0.05" value="0.3"></div>
               </div>
               <button class="tog on" id="togFills"><span class="sw"></span><span class="tt">Solid shapes as fills<small>Outlines and shades anything drawn thicker than the fill width. Off thins them to a spine, which turns eyebrows and lips into scribbles.</small></span></button>
               <button class="tog on" id="togHatch"><span class="sw"></span><span class="tt">Shade the fills<small>Off leaves solid shapes as hollow outlines</small></span></button>

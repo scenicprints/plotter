@@ -118,7 +118,10 @@ function traceOptionsFrom(o) {
     hatch: o.traceHatch !== false,
     fillWidthMm: Number(o.traceFillWidth) || TRACE_DEFAULTS.fillWidthMm,
     penMm: Number(o.tracePen) || TRACE_DEFAULTS.penMm,
-    upscale: Number(o.traceUpscale) || 2,
+    outline: !!o.traceOutline,
+    // Outline mode traces the native pixel grid; upscaling only adds points
+    // and staircase there without helping (that trick is for the skeleton).
+    upscale: o.traceOutline ? 1 : (Number(o.traceUpscale) || 2),
     masks: Array.isArray(o.masks) ? o.masks : [],
   };
 }

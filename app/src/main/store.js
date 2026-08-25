@@ -34,6 +34,7 @@ const DEFAULTS = {
     traceFillWidth: 0.9,   // mm of ink above which something is a fill, not a line
     tracePen: 0.3,         // pen tip, sets hatch pitch
     traceUpscale: 2,
+    traceOutline: true,    // trace ink outlines (line art) instead of centreline + fills
     // single-stroke text
     textOn: false,
     textMessage: '',

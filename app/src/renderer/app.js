@@ -334,6 +334,7 @@ function currentSettings() {
     traceThreshold: parseFloat($('traceThreshold').value) || 0,
     traceFillWidth: parseFloat($('traceFillWidth').value) || 0.9,
     tracePen: parseFloat($('tracePen').value) || 0.3,
+    traceOutline: $('togOutline').classList.contains('on'),
     traceFills: $('togFills').classList.contains('on'),
     traceHatch: $('togHatch').classList.contains('on'),
     // single-stroke text
@@ -375,10 +376,11 @@ async function rebuild() {
   }
   if (res && res.trace) {
     const t = res.trace;
-    $('traceInfo').textContent =
-      `${t.sourceWidth}x${t.sourceHeight} at ${t.upscale}x, threshold ${t.threshold}`
-      + `, ink ${t.inkPercent.toFixed(1)}%, fills ${t.filledPercent.toFixed(1)}% of it`
-      + `, ${res.stats.paths} strokes`;
+    $('traceInfo').textContent = t.mode === 'outline'
+      ? `${t.sourceWidth}x${t.sourceHeight}, threshold ${t.threshold}, ink ${t.inkPercent.toFixed(1)}%, ${res.stats.paths} outlines`
+      : `${t.sourceWidth}x${t.sourceHeight} at ${t.upscale}x, threshold ${t.threshold}`
+        + `, ink ${t.inkPercent.toFixed(1)}%, fills ${t.filledPercent.toFixed(1)}% of it`
+        + `, ${res.stats.paths} strokes`;
   }
   if (res) {
     if (res.stats.overflow) {
@@ -436,8 +438,10 @@ async function boot() {
     $('traceThreshold').value = s.traceThreshold ?? 0;
     $('traceFillWidth').value = s.traceFillWidth ?? 0.9;
     $('tracePen').value = s.tracePen ?? 0.3;
+    $('togOutline').classList.toggle('on', s.traceOutline !== false);
     $('togFills').classList.toggle('on', s.traceFills !== false);
     $('togHatch').classList.toggle('on', s.traceHatch !== false);
+    syncTraceMode();
     // fonts come from the main process, so fill the picker before selecting
     const fonts = await call(API.listFonts(), 'Could not read the fonts');
     if (fonts) {
@@ -476,8 +480,16 @@ function setFile(path, doBuild = true) {
   $('dropSub').textContent = 'drop another file, or click to browse';
   // The trace controls mean nothing for an SVG, so an SVG never shows them.
   $('traceBox').classList.toggle('hide', !ui.raster);
-  if (ui.raster) $('traceInfo').textContent = 'tracing the drawing';
+  if (ui.raster) { $('traceInfo').textContent = 'tracing the drawing'; syncTraceMode(); }
   if (doBuild) rebuild();
+}
+
+// Outline mode has no fills or hatch, so hide the controls that do not apply.
+function syncTraceMode() {
+  const on = $('togOutline') && $('togOutline').classList.contains('on');
+  ['togFills', 'togHatch', 'fFillWidth', 'fPen'].forEach((id) => {
+    const el = $(id); if (el) el.classList.toggle('hide', on);
+  });
 }
 
 async function refreshConsole() {
@@ -596,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('drop').addEventListener('drop', (e) => {
     const f = e.dataTransfer.files[0];
     if (!f) return;
-    if (!/\.svg$/i.test(f.name)) { toast('That is not an SVG.', 'err'); return; }
+    if (!/\.(svg|png|jpe?g|bmp|webp|gif)$/i.test(f.name)) { toast('Drop an SVG or an image (PNG, JPG).', 'err'); return; }
     const real = API.pathForFile(f);
     if (!real) { toast('Could not read that file path. Use the browse button instead.', 'err'); return; }
     setFile(real);
@@ -610,6 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Tracing costs a second or two, so these wait longer before firing.
   ['traceThreshold', 'traceFillWidth', 'tracePen'].forEach((id) =>
     $(id).addEventListener('input', () => rebuildSoon(600)));
+  toggle('togOutline', () => { syncTraceMode(); rebuildSoon(60); });
   toggle('togFills', () => rebuildSoon(60));
   toggle('togHatch', () => rebuildSoon(60));
   toggle('togText', (on) => { $('textBox').classList.toggle('hide', !on); rebuildSoon(60); });

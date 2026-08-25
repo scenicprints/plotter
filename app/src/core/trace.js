@@ -41,6 +41,9 @@ const DEFAULTS = {
   // PIXEL grid, which only this module knows about; the caller's mm
   // tolerance is for real curves in real SVGs and is far too fine here.
   smoothSourcePx: 0.6,
+  // Trace the ink boundary as closed contours instead of a skeleton. For
+  // detailed line art this reproduces the drawing; a skeleton fragments it.
+  outline: false,
 };
 
 // dy, dx  (8-connected)
@@ -267,6 +270,80 @@ function hatch(m, w, h, pitch) {
   return out;
 }
 
+// Summed segment length of a polyline, in pixels.
+function perimPx(p) {
+  let s = 0;
+  for (let i = 1; i < p.length; i++) {
+    const dx = p[i][0] - p[i - 1][0], dy = p[i][1] - p[i - 1][1];
+    s += Math.sqrt(dx * dx + dy * dy);
+  }
+  return s;
+}
+
+// Outline / boundary tracing. Instead of a skeleton, walk the border between
+// ink and paper as closed contours. Every ink pixel contributes a unit edge on
+// each side that faces paper (or the image edge); those edges meet only at grid
+// corners and form closed loops around each ink region. Where two regions touch
+// at a corner (degree 4) we take the most counter-clockwise turn, which keeps
+// loops from crossing and consumes every edge exactly once. For clean line art
+// this is faithful where thinning would turn faces and fine detail to mush.
+function outlineFromInk(ink, w, h) {
+  const CW = w + 1;                              // corners across a row
+  const vid = (vx, vy) => vy * CW + vx;
+  const adj = new Map();
+  const link = (a, b) => {
+    let la = adj.get(a); if (!la) { la = []; adj.set(a, la); } la.push(b);
+    let lb = adj.get(b); if (!lb) { lb = []; adj.set(b, lb); } lb.push(a);
+  };
+  const bg = (x, y) => x < 0 || y < 0 || x >= w || y >= h || !ink[y * w + x];
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    for (let x = 0; x < w; x++) {
+      if (!ink[r + x]) continue;
+      if (bg(x, y - 1)) link(vid(x, y),     vid(x + 1, y));      // top
+      if (bg(x, y + 1)) link(vid(x, y + 1), vid(x + 1, y + 1));  // bottom
+      if (bg(x - 1, y)) link(vid(x, y),     vid(x, y + 1));      // left
+      if (bg(x + 1, y)) link(vid(x + 1, y), vid(x + 1, y + 1));  // right
+    }
+  }
+  const KEYMUL = CW * (h + 1);                    // > any vid, keeps edge keys unique
+  const used = new Set();
+  const ekey = (a, b) => (a < b ? a * KEYMUL + b : b * KEYMUL + a);
+  const cx = (id) => id % CW, cy = (id) => (id / CW) | 0;
+  const pick = (prev, cur, cand) => {
+    const ia = Math.atan2(cy(cur) - cy(prev), cx(cur) - cx(prev));
+    let best = cand[0], bt = 10;
+    for (let i = 0; i < cand.length; i++) {
+      let t = Math.atan2(cy(cand[i]) - cy(cur), cx(cand[i]) - cx(cur)) - ia;
+      t = ((t % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      if (t < bt) { bt = t; best = cand[i]; }
+    }
+    return best;
+  };
+  const loops = [];
+  for (const [s, nbrs] of adj) {
+    for (let ni = 0; ni < nbrs.length; ni++) {
+      const nb = nbrs[ni];
+      if (used.has(ekey(s, nb))) continue;
+      const ids = [s];
+      let prev = s, cur = nb;
+      used.add(ekey(s, nb));
+      while (cur !== s) {
+        ids.push(cur);
+        const near = adj.get(cur);
+        const cand = [];
+        for (let i = 0; i < near.length; i++) if (!used.has(ekey(cur, near[i]))) cand.push(near[i]);
+        if (!cand.length) break;
+        const nx = cand.length > 1 ? pick(prev, cur, cand) : cand[0];
+        used.add(ekey(cur, nx)); prev = cur; cur = nx;
+      }
+      ids.push(s);
+      loops.push(ids.map((id) => [cx(id), cy(id)]));
+    }
+  }
+  return loops;
+}
+
 // ---------------------------------------------------------------- main entry
 // img: { data: Uint8Array|Buffer, width, height }. Returns paths in PIXEL
 // space plus the stats the UI shows.
@@ -298,6 +375,37 @@ function traceImage(img, options = {}) {
 
   let inkCount = 0;
   for (let i = 0; i < ink.length; i++) inkCount += ink[i];
+
+  // Outline mode: trace the ink boundary as closed contours instead of a
+  // skeleton + fills. Masks above still apply. Returns the same stats shape.
+  if (o.outline) {
+    const minPx = px(o.minStrokeMm);
+    const rawLoops = outlineFromInk(ink, w, h).filter((p) => perimPx(p) >= minPx);
+    const smoothO = Math.max(0, o.smoothSourcePx) * Math.max(1, o.upscale || 1);
+    const outO = smoothO > 0 ? rawLoops.map((p) => simplifyPx(p, smoothO)) : rawLoops;
+    return {
+      paths: outO,
+      width: w,
+      height: h,
+      stats: {
+        mode: 'outline',
+        threshold: T,
+        maskedPx,
+        masks: (o.masks || []).length,
+        nodesRaw: rawLoops.reduce((a, p) => a + p.length, 0),
+        nodes: outO.reduce((a, p) => a + p.length, 0),
+        inkPercent: (100 * inkCount) / (w * h),
+        filledPercent: 0,
+        centreline: 0,
+        outline: outO.length,
+        hatch: 0,
+        coreDropped: 0,
+        simplifyPx: px(o.simplifyMm),
+        minStrokePx: px(o.minStrokeMm),
+        mergePx: px(o.mergeMm),
+      },
+    };
+  }
 
   let thinMask = ink, filled = null, coreDropped = 0;
   if (o.fills) {
@@ -393,6 +501,6 @@ module.exports = {
   DEFAULTS, traceImage, pathsToSVG,
   // exported for tests
   toGray, autoThreshold, binarise, erode, dilate, dropSmall, thin,
-  skeletonToPaths, hatch,
+  skeletonToPaths, hatch, outlineFromInk,
   appendAll,
 };
