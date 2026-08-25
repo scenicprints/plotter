@@ -64,6 +64,9 @@ button:disabled{opacity:.4;cursor:not-allowed}
   overflow-y:auto;overflow-x:hidden;padding-right:4px}
 .left::-webkit-scrollbar{width:8px}
 .left::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+/* Panel children keep their natural height so the panel scrolls instead of
+   the cards shrinking and clipping their own content (the Send button). */
+.left > .card, .left > .banner{flex:0 0 auto}
 
 .banner{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:12px;
   border:1px solid var(--line2);background:var(--panel2)}
