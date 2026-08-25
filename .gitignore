@@ -11,3 +11,6 @@ Thumbs.db
 # Python bytecode from the Pi-side tools
 __pycache__/
 *.pyc
+
+# stray build/tool logs
+*.log
