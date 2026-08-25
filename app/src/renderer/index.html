@@ -13,7 +13,7 @@
   <div class="titlebar">
     <div class="brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 18.5 9 13.4 20a1.6 1.6 0 0 1-2.8 0L5.5 9z" stroke-linejoin="round"/><circle cx="12" cy="9.4" r="1.9" fill="currentColor" stroke="none"/></svg>
-      Plotter <small>1.1.1</small>
+      Plotter <small>1.2</small>
     </div>
     <div class="spacer"></div>
     <div class="chip click" id="connChip"><i class="dot" id="connDot"></i> <b id="connName">not connected</b> <span id="connState"></span></div>
@@ -180,6 +180,9 @@
             </button>
             <div class="tracebox hide" id="traceBox">
               <div class="tlab">Tracing<small id="traceInfo">reading the drawing</small></div>
+              <button class="tog" id="togMulti"><span class="sw"></span><span class="tt">Multicolour<small>One pen per colour. The plot pauses between colours so you can swap the pen and set the new writing height.</small></span></button>
+              <div class="frow hide" id="fColours"><div class="f"><label>Pens</label><input id="traceColours" type="number" step="1" min="2" max="8" value="4"></div></div>
+              <div class="swatches hide" id="swatches"></div>
               <button class="tog on" id="togOutline"><span class="sw"></span><span class="tt">Outline (line art)<small>Traces the edges of the drawing — faithful for coloring-book line art. Off uses centreline + fills, better for single-weight pen work.</small></span></button>
               <div class="frow">
                 <div class="f"><label>Threshold 0 = auto</label><input id="traceThreshold" type="number" step="1" min="0" max="254" value="0"></div>

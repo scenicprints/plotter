@@ -8,7 +8,8 @@ const { Machine } = require('./machine');
 const { Store } = require('./store');
 const { build, buildLayers, composeText, toGcode } = require('../core/pipeline');
 const SF = require('../core/strokefont');
-const { traceImage, pathsToSVG, DEFAULTS: TRACE_DEFAULTS } = require('../core/trace');
+const { traceImage, pathsToSVG, tracePathsFromMask, DEFAULTS: TRACE_DEFAULTS } = require('../core/trace');
+const { separate } = require('../core/colours');
 const { isRaster, loadBitmap, plannedWidthMm, RASTER_EXT } = require('./raster');
 const G = require('../core/geom');
 
@@ -162,6 +163,52 @@ function traceFor(file, o) {
   return traceCache;
 }
 
+// One pen per colour. Same tracer, run over each colour's mask, returned as
+// layers so buildLayers keeps them apart and toGcode can put a PEN_CHANGE on
+// each boundary.
+let colourCache = null;
+function colourTraceFor(file, o) {
+  const t = traceOptionsFrom(o);
+  const colours = Math.max(2, Math.min(12, Number(o.traceColours) || 4));
+  let mtime = 0;
+  try { mtime = fs.statSync(file).mtimeMs; } catch { /* recheck below */ }
+  const key = JSON.stringify([file, mtime, t, colours, o.paperW, o.paperH, o.margin, o.fit, o.autoRotate]);
+  if (colourCache && colourCache.key === key) return colourCache;
+
+  const bmp = loadBitmap(file, 1);            // native resolution, like outline mode
+  const widthMm = plannedWidthMm(bmp.sourceWidth, bmp.sourceHeight, o);
+  const sep = separate(bmp, { colours, channelOrder: 'bgra' });
+  const mm = widthMm / bmp.width;
+
+  const layers = [];
+  for (const c of sep.layers) {
+    const paths = tracePathsFromMask(c.mask, bmp.width, bmp.height, {
+      ...t, outline: true, upscale: 1, widthMm,
+    });
+    if (!paths.length) continue;
+    layers.push({
+      name: c.name, colour: c.hex, penName: c.name,
+      paths: paths.map((p) => p.map((q) => [q[0] * mm, q[1] * mm])),
+      swatch: { hex: c.hex, name: c.name, share: c.share },
+    });
+  }
+  if (!layers.length) throw new Error('no colour produced any strokes - try fewer colours');
+
+  colourCache = {
+    key, file, layers, widthMm,
+    heightMm: (widthMm * bmp.height) / bmp.width,
+    stats: {
+      mode: 'colour',
+      colours: layers.length,
+      swatches: layers.map((L) => ({ ...L.swatch, paths: L.paths.length })),
+      sourceWidth: bmp.sourceWidth, sourceHeight: bmp.sourceHeight,
+      inkPixels: sep.inkPixels,
+      widthMm, heightMm: (widthMm * bmp.height) / bmp.width,
+    },
+  };
+  return colourCache;
+}
+
 // Preview payload: draw polylines plus the travel moves between them, in
 // paper space (origin at the sheet centre, Y up).
 function previewOf(paths) {
@@ -285,6 +332,12 @@ function wireIPC() {
     let r, trace = null;
     if (!file) {
       r = null;
+    } else if (isRaster(file) && opts.traceMulticolour) {
+      // One layer per pen. keepLayers has to stay on here or the colours would
+      // be flattened into a single pass and the pen changes would be lost.
+      const c = colourTraceFor(file, opts);
+      trace = c.stats;
+      r = buildLayers(c.layers, { ...opts, keepLayers: true });
     } else if (isRaster(file)) {
       // A traced drawing is one pen's worth of work, so it enters as a single
       // layer. build's simplify / merge / filterMin then do the clean-up the
@@ -319,7 +372,7 @@ function wireIPC() {
     }
     if (!r) throw new Error('nothing to plot');
     const label = file ? path.basename(file) : 'text';
-    const gcode = toGcode(r.paths, r.options, { name: label, time: r.stats.time });
+    const gcode = toGcode(r.paths, r.options, { name: label, time: r.stats.time, runs: r.stats.runs });
     lastJob = { ...r, gcode, file, name: safeName(file || 'message.svg') };
     if (file) store.set('lastFile', file);
     return {

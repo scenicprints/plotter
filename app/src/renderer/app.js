@@ -335,6 +335,8 @@ function currentSettings() {
     traceFillWidth: parseFloat($('traceFillWidth').value) || 0.9,
     tracePen: parseFloat($('tracePen').value) || 0.3,
     traceOutline: $('togOutline').classList.contains('on'),
+    traceMulticolour: $('togMulti').classList.contains('on'),
+    traceColours: parseInt($('traceColours').value, 10) || 4,
     traceFills: $('togFills').classList.contains('on'),
     traceHatch: $('togHatch').classList.contains('on'),
     // single-stroke text
@@ -376,6 +378,29 @@ async function rebuild() {
   }
   if (res && res.trace) {
     const t = res.trace;
+    if (t.mode === 'colour') {
+      // Built as nodes, not an HTML string: the page's CSP forbids inline
+      // style attributes, so the swatch colour has to be set through the CSSOM
+      // or every dot comes out blank.
+      const box = $('swatches');
+      box.innerHTML = '';
+      t.swatches.forEach((s2, i) => {
+        const el = document.createElement('span');
+        el.className = 'swatch';
+        const dot = document.createElement('i');
+        dot.style.background = s2.hex;
+        const nm = document.createElement('b');
+        nm.textContent = `${i + 1}. ${s2.name}`;
+        const ct = document.createElement('small');
+        ct.textContent = s2.paths;
+        el.append(dot, nm, ct);
+        el.title = `${s2.hex} - ${s2.paths} paths`;
+        box.appendChild(el);
+      });
+      $('traceInfo').textContent =
+        `${t.sourceWidth}x${t.sourceHeight}, ${t.colours} pens, ${res.stats.paths} paths`
+        + `, ${t.colours - 1} pen change${t.colours === 2 ? '' : 's'}`;
+    } else
     $('traceInfo').textContent = t.mode === 'outline'
       ? `${t.sourceWidth}x${t.sourceHeight}, threshold ${t.threshold}, ink ${t.inkPercent.toFixed(1)}%, ${res.stats.paths} outlines`
       : `${t.sourceWidth}x${t.sourceHeight} at ${t.upscale}x, threshold ${t.threshold}`
@@ -439,6 +464,8 @@ async function boot() {
     $('traceFillWidth').value = s.traceFillWidth ?? 0.9;
     $('tracePen').value = s.tracePen ?? 0.3;
     $('togOutline').classList.toggle('on', s.traceOutline !== false);
+    $('togMulti').classList.toggle('on', !!s.traceMulticolour);
+    $('traceColours').value = s.traceColours ?? 4;
     $('togFills').classList.toggle('on', s.traceFills !== false);
     $('togHatch').classList.toggle('on', s.traceHatch !== false);
     syncTraceMode();
@@ -486,10 +513,18 @@ function setFile(path, doBuild = true) {
 
 // Outline mode has no fills or hatch, so hide the controls that do not apply.
 function syncTraceMode() {
+  const multi = $('togMulti') && $('togMulti').classList.contains('on');
+  // Multicolour always traces outlines: a colour is a region, and its edge is
+  // what a pen can actually follow.
+  if (multi) $('togOutline').classList.add('on');
   const on = $('togOutline') && $('togOutline').classList.contains('on');
   ['togFills', 'togHatch', 'fFillWidth', 'fPen'].forEach((id) => {
     const el = $(id); if (el) el.classList.toggle('hide', on);
   });
+  $('togOutline').classList.toggle('hide', multi);
+  $('fColours').classList.toggle('hide', !multi);
+  $('swatches').classList.toggle('hide', !multi);
+  if (!multi) $('swatches').innerHTML = '';
 }
 
 async function refreshConsole() {
@@ -623,6 +658,8 @@ document.addEventListener('DOMContentLoaded', () => {
   ['traceThreshold', 'traceFillWidth', 'tracePen'].forEach((id) =>
     $(id).addEventListener('input', () => rebuildSoon(600)));
   toggle('togOutline', () => { syncTraceMode(); rebuildSoon(60); });
+  toggle('togMulti', () => { syncTraceMode(); rebuildSoon(60); });
+  $('traceColours').addEventListener('input', () => rebuildSoon(600));
   toggle('togFills', () => rebuildSoon(60));
   toggle('togHatch', () => rebuildSoon(60));
   toggle('togText', (on) => { $('textBox').classList.toggle('hide', !on); rebuildSoon(60); });

@@ -67,6 +67,13 @@ button:disabled{opacity:.4;cursor:not-allowed}
 /* Panel children keep their natural height so the panel scrolls instead of
    the cards shrinking and clipping their own content (the Send button). */
 .left > .card, .left > .banner{flex:0 0 auto}
+/* colour separation swatches */
+.swatches{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
+.swatch{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--line2);
+  border-radius:99px;background:var(--panel);font-size:11.5px;color:var(--dim)}
+.swatch i{width:11px;height:11px;border-radius:50%;border:1px solid var(--line2);flex:none}
+.swatch b{font-weight:600;color:var(--text)}
+.swatch small{color:var(--faint);font-family:var(--mono);font-size:10.5px}
 
 .banner{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:12px;
   border:1px solid var(--line2);background:var(--panel2)}

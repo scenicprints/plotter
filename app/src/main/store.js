@@ -35,6 +35,8 @@ const DEFAULTS = {
     tracePen: 0.3,         // pen tip, sets hatch pitch
     traceUpscale: 2,
     traceOutline: true,    // trace ink outlines (line art) instead of centreline + fills
+    traceMulticolour: false, // one pen per colour, with a pause to swap between
+    traceColours: 4,       // how many pens when multicolour is on
     // single-stroke text
     textOn: false,
     textMessage: '',

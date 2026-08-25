@@ -477,6 +477,21 @@ function traceImage(img, options = {}) {
   };
 }
 
+// Trace a mask that someone else has already decided on - one colour's ink,
+// say - rather than binarising an image here. Same treatment as traceImage's
+// outline mode, kept separate so the colour path does not have to fake up an
+// image just to reuse it.
+function tracePathsFromMask(mask, w, h, options = {}) {
+  const o = { ...DEFAULTS, ...options };
+  const mmPerPx = o.widthMm / w;
+  const px = (mm) => mm / mmPerPx;
+  const raw = o.outline
+    ? outlineFromInk(mask, w, h).filter((p) => perimPx(p) >= px(o.minStrokeMm))
+    : skeletonToPaths(thin(mask, w, h), w, h);
+  const smooth = Math.max(0, o.smoothSourcePx) * Math.max(1, o.upscale || 1);
+  return smooth > 0 ? raw.map((p) => simplifyPx(p, smooth)) : raw;
+}
+
 // ---------------------------------------------------------------- svg out
 // One layer. Deliberately: layers are for pen changes and a traced photo is
 // a single-pen job, so splitting it just makes something to flatten by hand.
@@ -501,6 +516,6 @@ module.exports = {
   DEFAULTS, traceImage, pathsToSVG,
   // exported for tests
   toGray, autoThreshold, binarise, erode, dilate, dropSmall, thin,
-  skeletonToPaths, hatch, outlineFromInk,
+  skeletonToPaths, hatch, outlineFromInk, tracePathsFromMask,
   appendAll,
 };

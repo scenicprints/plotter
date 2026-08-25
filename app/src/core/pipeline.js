@@ -84,7 +84,7 @@ function buildLayers(layers, options = {}) {
   // Work on a flat list but remember which layer each path came from, so
   // ordering can stay inside a layer.
   let groups = o.keepLayers
-    ? layers.map((L) => ({ name: L.name, paths: L.paths }))
+    ? layers.map((L) => ({ name: L.name, paths: L.paths, colour: L.colour, penName: L.penName }))
     : [{ name: 'all', paths: layers.flatMap((L) => L.paths) }];
 
   // ---- clean up
@@ -130,9 +130,13 @@ function buildLayers(layers, options = {}) {
   // ---- order, per layer, carrying the pen position across layers
   let penX = 0, penY = 0, travelLen = 0;
   const ordered = [];
+  // Where each layer's run of paths begins, so a multicolour job can drop a
+  // pen change on the boundary. Layer order is the order pens get swapped in.
+  const runs = [];
   for (const g of groups) {
     const r = G.sortPaths(g.paths, penX, penY, true);
     travelLen += r.travel;
+    runs.push({ name: g.name, colour: g.colour || null, penName: g.penName || null, start: ordered.length, count: r.paths.length });
     for (const p of r.paths) ordered.push(p);
     if (r.paths.length) {
       const tip = r.paths[r.paths.length - 1];
@@ -157,6 +161,7 @@ function buildLayers(layers, options = {}) {
     rotated,
     overflow,
     layers: groups.map((g) => g.name),
+    runs,
     // Enough to map a point from the artwork's own mm space into paper space
     // and back. The UI needs the inverse so a rectangle dragged on the preview
     // can be turned into a region of the source image.
@@ -234,6 +239,10 @@ function toGcode(paths, o, meta = {}) {
   L.push(`; paths: ${paths.length}`);
   if (meta.time) L.push(`; estimate: ${meta.time}`);
   L.push('; origin is the sheet CENTRE');
+  if ((meta.runs || []).length > 1) {
+    L.push(`; ${meta.runs.length} pens, swapped in this order:`);
+    meta.runs.forEach((r, i) => L.push(`;   ${i + 1}. ${r.penName || r.name}${r.colour ? ' (' + r.colour + ')' : ''} - ${r.count} paths`));
+  }
   if (o.dryRun) L.push(`; DRY RUN at Z${o.dryZ} - nothing is drawn`);
   L.push('G21');
   L.push('G90');
@@ -248,7 +257,22 @@ function toGcode(paths, o, meta = {}) {
       }
     }
   } else {
+    // A multicolour job is the same path list with pen changes on the layer
+    // boundaries. PEN_CHANGE lifts, clears the Z reference and pauses; the
+    // new pen is a different length, so Z0 has to be set again by hand before
+    // PEN_DOWN will do anything (it refuses while unzeroed).
+    const runs = (meta.runs || []).filter((r) => r.count > 0);
+    const changeAt = new Map();
+    if (runs.length > 1) {
+      for (let i = 1; i < runs.length; i++) changeAt.set(runs[i].start, { r: runs[i], i });
+    }
+    let idx = 0;
     for (const p of paths) {
+      const ch = changeAt.get(idx++);
+      if (ch) {
+        const who = ch.r.penName || ch.r.colour || ch.r.name;
+        L.push(`PEN_CHANGE PEN="${String(who).replace(/"/g, '')}" INDEX=${ch.i + 1} OF=${runs.length}`);
+      }
       L.push(`G0 X${f(p[0][0])} Y${f(p[0][1])} F${Math.round(o.travelFeed)}`);
       L.push('PEN_DOWN');
       for (let i = 1; i < p.length; i++) {

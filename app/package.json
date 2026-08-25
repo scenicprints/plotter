@@ -1,14 +1,14 @@
 {
   "name": "plotter",
   "productName": "Plotter",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "CR-6 SE pen plotter control",
   "author": "Kevin Wagner",
   "license": "UNLICENSED",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test-geom.js && node test-trace.js && node test-text.js && node test-core.js",
+    "test": "node test-geom.js && node test-trace.js && node test-colour.js && node test-text.js && node test-core.js",
     "dist": "electron-builder --win",
     "serve": "node serve-dist.js"
   },
