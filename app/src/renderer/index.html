@@ -13,7 +13,7 @@
   <div class="titlebar">
     <div class="brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 18.5 9 13.4 20a1.6 1.6 0 0 1-2.8 0L5.5 9z" stroke-linejoin="round"/><circle cx="12" cy="9.4" r="1.9" fill="currentColor" stroke="none"/></svg>
-      Plotter <small>1.2</small>
+      Plotter <small>1.2.1</small>
     </div>
     <div class="spacer"></div>
     <div class="chip click" id="connChip"><i class="dot" id="connDot"></i> <b id="connName">not connected</b> <span id="connState"></span></div>
@@ -37,6 +37,32 @@
     <div class="main">
       <!-- ============ LEFT: PLOT ============ -->
       <div class="left" id="tab-plot">
+
+      <div class="penchange hide" id="penChange">
+          <div class="pctop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 2 2-7 7-2-2z"/><path d="M18 13l-1.5-1.5"/><path d="M3 5l4 4"/><path d="M6.5 2.5 4 5 2 3l2.5-2.5z"/></svg>
+            <div><b id="pcWhich">Swap to the next pen</b>
+            <span>The new pen is a different length, so the writing height has to be set again before it can draw.</span></div>
+          </div>
+          <ol class="pcsteps">
+            <li>Swap the pen in the holder.</li>
+            <li>Give Z room, then jog down until it writes with the carriage floating off its stop.</li>
+            <li>Lock Z0, then continue.</li>
+          </ol>
+          <div class="pcrow">
+            <button class="rbtn" id="pcRoom">Give Z room</button>
+            <div class="pcjog">
+              <button class="rbtn" data-pcjog="1">Z up 1</button>
+              <button class="rbtn" data-pcjog="-1">down 1</button>
+              <button class="rbtn" data-pcjog="-0.1">down 0.1</button>
+            </div>
+          </div>
+          <div class="pcstate warn" id="pcZeroed">Z0 is NOT set</div>
+          <div class="pcrow">
+            <button class="btn pri grow" id="pcLock">Lock Z0 here</button>
+            <button class="btn gho w120" id="pcResume">Continue</button>
+          </div>
+        </div>
 
         <div class="banner hide" id="restoreBanner">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 12a8.5 8.5 0 1 1 2.6 6.1"/><path d="M3 19v-5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>

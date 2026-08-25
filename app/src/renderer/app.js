@@ -80,7 +80,11 @@ function paint(s) {
   // With Z0 locked the only way to set a lower writing height is to release it,
   // so this button becomes that action rather than going dead.
   $('zRoom').textContent = s.zeroed ? 'Unlock Z0 to go lower' : 'Give Z room';
-  $('zRoom').disabled = s.printing;
+  // A paused plot is still "printing", but a pen change is exactly when the
+  // writing height HAS to be set again: the new pen is a different length.
+  // Gate the Z controls on actually moving, not on having a job loaded.
+  const midPlot = s.printing && !s.paused;
+  $('zRoom').disabled = midPlot;
 
   // ---- step 2
   $('mx').textContent = fmt(s.x);
@@ -98,17 +102,39 @@ function paint(s) {
   $('mHomed').textContent = s.homedAxes ? s.homedAxes.toUpperCase() : 'none';
   $('mOrigin').textContent = `${fmt(s.originX)}, ${fmt(s.originY)}`;
   $('mPaper').textContent = hasPaper ? `${fmt(s.paperW)}×${fmt(s.paperH)}` : 'unset';
-  document.querySelectorAll('[data-zjog2]').forEach((x) => { x.disabled = !s.homedZ || s.printing; });
+  document.querySelectorAll('[data-zjog2]').forEach((x) => { x.disabled = !s.homedZ || midPlot; });
 
   // ---- motion buttons need X/Y homed
   document.querySelectorAll('[data-jog]').forEach((b) => { b.disabled = !s.homedXY || s.printing; });
-  document.querySelectorAll('[data-zjog]').forEach((b) => { b.disabled = !s.homedZ || s.printing; });
-  $('penUp').disabled = $('penDown').disabled = !s.zeroed || s.printing;
-  $('lockZ').disabled = !s.homedZ || s.printing;
+  document.querySelectorAll('[data-zjog]').forEach((b) => { b.disabled = !s.homedZ || midPlot; });
+  $('penUp').disabled = $('penDown').disabled = !s.zeroed || midPlot;
+  $('lockZ').disabled = !s.homedZ || midPlot;
   $('setCorner').disabled = !s.homedXY || s.printing;
   $('homeBtn').disabled = s.printing;
   $('mHome').disabled = s.printing;
   $('mPenTest').disabled = !s.zeroed || s.printing;
+
+  // ---- pen change
+  // Only the machine knows which pen it stopped for, so the prompt is read
+  // back from what PEN_CHANGE actually said rather than guessed from progress.
+  // Not every pause is a pen change: someone hitting Pause should not be told
+  // to swap pens. PEN_CHANGE is the only thing that unzeroes mid-plot, so an
+  // unzeroed pause is one for certain, and the console confirms it by name -
+  // which is what keeps the panel up after Z0 is locked again.
+  const penChange = s.paused && (!s.zeroed || ui.isPenChange === true);
+  $('penChange').classList.toggle('hide', !penChange);
+  if (s.paused) {
+    if (!ui.penChangeAsked) { ui.penChangeAsked = true; readPenChange(); }
+    $('pcZeroed').textContent = s.zeroed
+      ? 'Z0 is locked - ready to continue'
+      : 'Z0 is NOT set - the pen cannot draw yet';
+    $('pcZeroed').className = 'pcstate ' + (s.zeroed ? 'ok' : 'warn');
+    $('pcResume').disabled = !s.zeroed;
+    $('pcLock').disabled = !s.homedZ;
+  } else {
+    ui.penChangeAsked = false;
+    ui.isPenChange = false;
+  }
 
   // ---- run bar
   const running = s.printing;
@@ -527,6 +553,20 @@ function syncTraceMode() {
   if (!multi) $('swatches').innerHTML = '';
 }
 
+// What did PEN_CHANGE say? The console is the honest source: it names the pen
+// the gcode actually asked for, in the order the file really uses.
+async function readPenChange() {
+  const r = await API.consoleLog(60);
+  if (!r || !r.ok) return;
+  const line = r.value.map((l) => l.message).reverse()
+    .find((m) => /PEN CHANGE/i.test(m));
+  if (!line) { $('pcWhich').textContent = 'Swap to the next pen'; return; }
+  ui.isPenChange = true;
+  const m = /PEN CHANGE\s+(\d+)\s+of\s+(\d+):\s*load\s+(.+?)\.\s/i.exec(`${line} `);
+  $('pcWhich').textContent = m ? `Load the ${m[3]} pen  (${m[1]} of ${m[2]})` : line.slice(0, 90);
+  if (ui.status) paint(ui.status);
+}
+
 async function refreshConsole() {
   if ($('tab-machine').classList.contains('hide')) return;
   const lines = await API.consoleLog(60);
@@ -588,6 +628,27 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('penUp').addEventListener('click', async () => { const s = await call(API.penUp(), 'Pen up refused'); if (s) paint(s); });
   $('penDown').addEventListener('click', async () => { const s = await call(API.penDown(), 'Pen down refused'); if (s) paint(s); });
+  // The pen-change panel drives the same actions as step 1, so a swap never
+  // means hunting for the controls behind a collapsed card.
+  $('pcRoom').addEventListener('click', async () => {
+    const st = ui.status;
+    const s2 = await call(st && st.zeroed ? API.releaseZ() : API.zRoom(), 'Could not give Z room');
+    if (s2) paint(s2);
+  });
+  document.querySelectorAll('[data-pcjog]').forEach((b) => b.addEventListener('click', async () => {
+    const d = parseFloat(b.dataset.pcjog);
+    const s2 = await call(API.zJog(d), 'Z jog refused');
+    if (s2) paint(s2);
+  }));
+  $('pcLock').addEventListener('click', async () => {
+    const s2 = await call(API.zeroHere(), 'Could not lock Z0');
+    if (s2) { paint(s2); toast('Z0 locked for the new pen. Continue when ready.', 'ok'); }
+  });
+  $('pcResume').addEventListener('click', async () => {
+    const s2 = await call(API.resume(), 'Could not resume');
+    if (s2) paint(s2);
+  });
+
   $('lockZ').addEventListener('click', async () => {
     const s = await call(API.zeroHere(), 'Could not lock Z0');
     if (s) { paint(s); toast('This height is now Z0 and the floor. Pen moves are unlocked.', 'ok', 'Writing height locked'); openCard(2); }

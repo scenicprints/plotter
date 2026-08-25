@@ -67,6 +67,22 @@ button:disabled{opacity:.4;cursor:not-allowed}
 /* Panel children keep their natural height so the panel scrolls instead of
    the cards shrinking and clipping their own content (the Send button). */
 .left > .card, .left > .banner{flex:0 0 auto}
+/* pen change, shown only while a multicolour plot is paused */
+.penchange{--ac:var(--a1);border:1px solid var(--a1);border-radius:12px;background:var(--panel2);
+  padding:14px 15px;box-shadow:var(--shadow);position:relative}
+.penchange::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  border-radius:12px 0 0 12px;background:var(--a1)}
+.pctop{display:flex;gap:11px;align-items:flex-start;margin-bottom:11px}
+.pctop svg{width:19px;height:19px;color:var(--a1);flex:none;margin-top:1px}
+.pctop b{display:block;font-size:14px;color:var(--text);margin-bottom:3px}
+.pctop span{font-size:12px;color:var(--dim);line-height:1.5}
+.pcsteps{margin:0 0 12px 0;padding-left:20px;font-size:12px;color:var(--dim);line-height:1.7}
+.pcrow{display:flex;gap:8px;align-items:center;margin-bottom:9px}
+.pcjog{display:flex;gap:6px;margin-left:auto}
+.pcstate{font-size:11.5px;font-family:var(--mono);padding:7px 10px;border-radius:8px;
+  margin-bottom:10px;border:1px solid var(--line2)}
+.pcstate.warn{color:var(--a1);background:rgba(255,255,255,.02)}
+.pcstate.ok{color:var(--a3)}
 /* colour separation swatches */
 .swatches{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
 .swatch{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--line2);
