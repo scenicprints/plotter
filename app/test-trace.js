@@ -192,5 +192,25 @@ console.log('\nbig drawings');
   ok('and it is genuinely large', r && r.paths.length > 20000, r ? r.paths.length : 0, '>20000');
 }
 
+console.log('outline tracing');
+{
+  const img = page(30, 30, (s) => box(s, 10, 10, 19, 19));
+  const r = T.traceImage(img, { widthMm: 30, outline: true });
+  ok('outline mode is reported', r.stats.mode === 'outline', r.stats.mode, 'outline');
+  ok('outline makes at least one loop', r.paths.length >= 1, r.paths.length, '>=1');
+  const p0 = r.paths[0];
+  const closed = p0.length > 2 && p0[0][0] === p0[p0.length - 1][0] && p0[0][1] === p0[p0.length - 1][1];
+  ok('an outline loop is closed', closed, closed, true);
+}
+{
+  const w = 24, h = 24;
+  const solid = new Uint8Array(w * h);
+  for (let y = 6; y < 18; y++) for (let x = 6; x < 18; x++) solid[y * w + x] = 1;
+  ok('solid region has 1 outline', T.outlineFromInk(solid, w, h).length === 1, T.outlineFromInk(solid, w, h).length, 1);
+  const ring = new Uint8Array(solid);
+  for (let y = 9; y < 15; y++) for (let x = 9; x < 15; x++) ring[y * w + x] = 0;
+  ok('region with a hole has 2 outlines', T.outlineFromInk(ring, w, h).length === 2, T.outlineFromInk(ring, w, h).length, 2);
+}
+
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);
