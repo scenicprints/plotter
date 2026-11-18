@@ -38,6 +38,14 @@ const CATALOGUE = [
   { id: 'HersheyGothEnglish',   name: 'Gothic English' },
 ];
 
+// Pasted punctuation that none of these fonts carry, and what to draw instead.
+const SUBS = {
+  '‘': "'", '’': "'", '‚': "'", 'ʼ': "'", '´': "'", '`': "'",
+  '“': '"', '”': '"', '„': '"',
+  '–': '-', '—': '-', '−': '-', '•': '-',
+  '…': '...', ' ': ' ', '\t': '  ',
+};
+
 function listFonts() {
   return CATALOGUE.filter((f) => fs.existsSync(path.join(DIR, f.id + '.svg')));
 }
@@ -160,9 +168,44 @@ class StrokeFont {
     return g ? g.adv : this.defaultAdv;
   }
 
+  // What this font can draw of the text. A character with no glyph draws
+  // nothing but still advances, which leaves a hole in the word: an address
+  // pasted from a phone turns "Kevin's" into "Kevin s". So a pasted curly
+  // quote becomes the straight one, an accented letter loses its accent when
+  // the font lacks it, and only what is left unmatched after that is a hole.
+  //
+  // What still has no glyph is DROPPED rather than kept: a kept one draws
+  // nothing but still advances, which leaves a hole and, worse, throws a
+  // centred line off by half its width. unsupported() names what was dropped.
+  prepare(text) {
+    let out = '';
+    for (const ch of String(text == null ? '' : text)) {
+      const m = this.map(ch);
+      if (m !== null) out += m;
+    }
+    return out;
+  }
+
+  // One character -> what to draw for it, or null when nothing can be.
+  map(ch) {
+    if (this.glyphs.has(ch) || ch === '\n' || ch === '\r') return ch;
+    const sub = SUBS[ch];
+    if (sub !== undefined) return sub;
+    const base = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return base && base !== ch && this.glyphs.has(base) ? base : null;
+  }
+
+  // The characters prepare() had to drop, each once.
+  unsupported(text) {
+    const miss = new Set();
+    for (const ch of String(text == null ? '' : text)) if (this.map(ch) === null) miss.add(ch);
+    return [...miss];
+  }
+
   // Width of a single line at the given cap height, in the same units.
   width(text, size, tracking = 0) {
     const s = size / this.cap;
+    text = this.prepare(text);
     let w = 0;
     for (const ch of text) w += this.advance(ch) * s + tracking;
     return text.length ? w - tracking : 0;
@@ -174,7 +217,7 @@ class StrokeFont {
     const s = size / this.cap;
     const out = [];
     let pen = x;
-    for (const ch of text) {
+    for (const ch of this.prepare(text)) {
       const g = this.glyphs.get(ch);
       if (g) {
         for (const l of g.lines) {
@@ -248,4 +291,4 @@ function measure(text, opts = {}) {
   return { width: x1 - x0, height: y1 - y0, x0, y0, x1, y1, lines: rows.length, lead, size, paths: paths.length };
 }
 
-module.exports = { listFonts, loadFont, layout, measure, StrokeFont, CATALOGUE };
+module.exports = { listFonts, loadFont, layout, measure, StrokeFont, CATALOGUE, SUBS };

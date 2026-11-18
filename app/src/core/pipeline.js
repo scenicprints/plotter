@@ -230,13 +230,11 @@ function composeText(built, textPaths, options = {}) {
 // been loaded on this machine at times still ran M84, which drops the motors
 // and erases the hand-set Z reference, and its park move overran the rail.
 // Ending with PEN_UP and a plain lift is the known-good sequence.
-function toGcode(paths, o, meta = {}) {
-  const L = [];
-  const f = (v) => v.toFixed(3);
+function gcodeHeader(L, o, meta, nPaths) {
   L.push('; CR-6 SE pen plotter');
   if (meta.name) L.push(`; source: ${meta.name}`);
   L.push(`; paper: ${o.paperW} x ${o.paperH} mm, margin ${o.margin} mm`);
-  L.push(`; paths: ${paths.length}`);
+  L.push(`; paths: ${nPaths}`);
   if (meta.time) L.push(`; estimate: ${meta.time}`);
   L.push('; origin is the sheet CENTRE');
   if ((meta.runs || []).length > 1) {
@@ -247,9 +245,56 @@ function toGcode(paths, o, meta = {}) {
   L.push('G21');
   L.push('G90');
   L.push('PLOT_START');
+  // Fly a dry run well clear of the paper and the hold-down magnets.
+  if (o.dryRun) L.push(`G1 Z${o.dryZ} F${Math.round(o.zUpFeed)}`);
+}
+
+function gcodeFooter(L, o) {
+  if (!o.dryRun) L.push('PEN_UP');
+  L.push(`G1 Z20 F${Math.round(o.zUpFeed)}`);
+  L.push('; done');
+}
+
+function toGcode(paths, o, meta = {}) {
+  const L = [];
+  gcodeHeader(L, o, meta, paths.length);
+  gcodeBody(L, paths, o, meta);
+  gcodeFooter(L, o);
+  return L.join('\n') + '\n';
+}
+
+// Several sheets in one file: an envelope per recipient. Between sheets the
+// pen lifts clear and the machine pauses with a message the app reads back,
+// the same way PEN_CHANGE talks to it. The pen is the same, so unlike a pen
+// change the Z reference is KEPT: load the next envelope at the same corner
+// and resume. A dry run flies all of them without stopping.
+function toGcodeStack(jobs, o, meta = {}) {
+  const L = [];
+  const n = jobs.length;
+  const total = jobs.reduce((a, j) => a + j.paths.length, 0);
+  gcodeHeader(L, o, meta, total);
+  L.push(`; ${n} envelopes in this file`);
+  jobs.forEach((j, i) => {
+    const label = String(j.label || '').replace(/["\r\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+    L.push(`; ---- envelope ${i + 1} of ${n}: ${label}`);
+    if (i > 0 && !o.dryRun) {
+      L.push('PEN_UP');
+      L.push('G91');
+      L.push(`G1 Z20 F${Math.round(o.zUpFeed)}`);
+      L.push('G90');
+      L.push('M400');
+      L.push(`RESPOND MSG="NEXT ENVELOPE ${i + 1} of ${n}: ${label}. Load it at the same corner, then RESUME."`);
+      L.push('PAUSE');
+    }
+    gcodeBody(L, j.paths, o, {});
+  });
+  gcodeFooter(L, o);
+  return L.join('\n') + '\n';
+}
+
+function gcodeBody(L, paths, o, meta) {
+  const f = (v) => v.toFixed(3);
   if (o.dryRun) {
-    // Fly the whole job well clear of the paper and the hold-down magnets.
-    L.push(`G1 Z${o.dryZ} F${Math.round(o.zUpFeed)}`);
     for (const p of paths) {
       L.push(`G0 X${f(p[0][0])} Y${f(p[0][1])} F${Math.round(o.travelFeed)}`);
       for (let i = 1; i < p.length; i++) {
@@ -280,11 +325,7 @@ function toGcode(paths, o, meta = {}) {
       }
       L.push('PEN_UP');
     }
-    L.push('PEN_UP');
   }
-  L.push(`G1 Z20 F${Math.round(o.zUpFeed)}`);
-  L.push('; done');
-  return L.join('\n') + '\n';
 }
 
-module.exports = { build, buildLayers, composeText, toGcode, estimate, fmtTime, DEFAULTS };
+module.exports = { build, buildLayers, composeText, toGcode, toGcodeStack, estimate, fmtTime, DEFAULTS };

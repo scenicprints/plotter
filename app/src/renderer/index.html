@@ -67,6 +67,17 @@
           </div>
         </div>
 
+        <div class="penchange hide" id="envChange">
+          <div class="pctop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.5 7.5 8.5 6 8.5-6"/></svg>
+            <div><b id="ecWhich">Load the next envelope</b>
+            <span>Same pen, same corner: the writing height and the origin are kept. Put the next envelope exactly where the last one sat, then continue.</span></div>
+          </div>
+          <div class="pcrow">
+            <button class="btn pri grow" id="ecResume">Continue with the next envelope</button>
+          </div>
+        </div>
+
         <div class="banner hide" id="restoreBanner">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 12a8.5 8.5 0 1 1 2.6 6.1"/><path d="M3 19v-5h5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div class="t"><b>The machine lost its setup</b><span id="restoreText"></span></div>
@@ -160,6 +171,8 @@
                   <button class="sc" data-w="148" data-h="105">A6</button>
                   <button class="sc" data-w="210" data-h="148">A5</button>
                   <button class="sc" data-w="152.4" data-h="101.6">4×6″</button>
+                  <button class="sc" data-w="165.1" data-h="120.65" title="A6 envelope, takes a 4×6 card">A6 env</button>
+                  <button class="sc" data-w="184.15" data-h="133.35" title="A7 envelope, takes a 5×7 card">A7 env</button>
                 </div>
               </div>
             </div>
@@ -243,7 +256,9 @@
               <div class="frow">
                 <div class="f"><label>X mm from centre</label><input id="textX" type="number" step="1" value="0"></div>
                 <div class="f"><label>Y mm from centre</label><input id="textY" type="number" step="1" value="0"></div>
+                <div class="f"><label>Spacing mm</label><input id="textSpacingMm" type="number" step="0.1" value="0"></div>
               </div>
+              <div class="hint">Drag the message on the preview to place it.</div>
             </div>
             <div class="frow">
               <div class="f"><label>Margin mm</label><input id="margin" type="number" step="0.5" value="10"></div>
@@ -279,37 +294,46 @@
             <span class="cval" id="valW">nothing yet</span>
           </button>
           <div class="cbody">
+            <div class="frow">
+              <div class="f grow2"><label>Recent</label><select id="jobPick"><option value="">No recent jobs yet</option></select></div>
+              <button class="btn gho w110" id="jobSave" title="Keep this envelope or card in the Recent list. Anything you send is kept automatically.">Save this</button>
+            </div>
             <div class="seg" id="writeMode">
               <button class="sg on" data-v="envelope">Envelope</button>
               <button class="sg" data-v="card">Card</button>
             </div>
 
             <div id="envBox">
-              <div class="hint">Sender goes in the <em>top-left corner</em>, inset by the margin. Recipient is <em>centred</em> on the envelope. Set the envelope's size and corner in step 2 as usual.</div>
+              <div class="hint">Sender goes in the <em>top-left corner</em>, inset by the margin. Recipient is <em>centred</em> on the envelope. Set the envelope's size and corner in step 2 as usual, and set the writing height <em>on the envelope itself</em>: it is thicker than a card. Drag either block on the preview to place it. Several recipients separated by a <em>blank line</em> become a stack: one envelope each, with a pause between to swap them.</div>
               <div class="textbox">
                 <div class="tlab">Sender<small id="envSenderInfo">nothing yet</small></div>
                 <textarea id="envSender" rows="3" spellcheck="false" placeholder="Kevin Wagner&#10;123 Example Street&#10;Town, ST 00000"></textarea>
                 <div class="frow">
                   <div class="f"><label>Cap mm</label><input id="envSenderMm" type="number" step="0.5" min="1" value="3.5"></div>
-                  <div class="f grow2"></div>
+                  <div class="f"><label>X mm nudge</label><input id="envSenderX" type="number" step="1" value="0"></div>
+                  <div class="f"><label>Y mm nudge</label><input id="envSenderY" type="number" step="1" value="0"></div>
                 </div>
               </div>
               <div class="textbox">
-                <div class="tlab">Recipient<small id="envRecipientInfo">nothing yet</small></div>
+                <div class="tlab">Recipient
+                  <span class="stacknav hide" id="stackNav"><button id="stackPrev" title="Previous envelope">&#8249;</button><b id="stackPos">1 / 1</b><button id="stackNext" title="Next envelope">&#8250;</button></span>
+                  <small id="envRecipientInfo">nothing yet</small></div>
                 <textarea id="envRecipient" rows="4" spellcheck="false" placeholder="Ella Wagner&#10;456 Example Avenue&#10;City, ST 00000"></textarea>
                 <div class="frow">
                   <div class="f"><label>Cap mm</label><input id="envRecipientMm" type="number" step="0.5" min="1" value="5"></div>
-                  <div class="f"><label>Y mm below centre</label><input id="envRecipientY" type="number" step="1" value="0"></div>
+                  <div class="f"><label>X mm from centre</label><input id="envRecipientX" type="number" step="1" value="0"></div>
+                  <div class="f"><label>Y mm from centre</label><input id="envRecipientY" type="number" step="1" value="0"></div>
                 </div>
               </div>
               <div class="frow">
                 <div class="f grow2"><label>Font</label><select id="envFont"></select></div>
+                <div class="f"><label>Spacing mm</label><input id="envSpacingMm" type="number" step="0.1" value="0"></div>
                 <div class="f"><label>Margin mm</label><input id="writeMarginEnv" type="number" step="0.5" value="10"></div>
               </div>
             </div>
 
             <div id="cardBox" class="hide">
-              <div class="hint">The message is <em>centred on the card</em>: one line sits dead centre, and more lines grow evenly up and down. Set the card's size and corner in step 2 as usual.</div>
+              <div class="hint">The message is <em>centred on the card</em>: one line sits dead centre, and more lines grow evenly up and down. Set the card's size and corner in step 2 as usual. Drag the message on the preview to place it, and add a drawing to go above or below it.</div>
               <div class="textbox">
                 <div class="tlab">Message<small id="cardInfo">nothing yet</small></div>
                 <textarea id="cardMessage" rows="5" spellcheck="false" placeholder="Ella,&#10;&#10;Happy 6th Birthday!&#10;Love, Kevin"></textarea>
@@ -322,11 +346,24 @@
                   <div class="f"><label>Align</label><select id="cardAlign">
                     <option value="centre">Centre</option><option value="left">Left</option><option value="right">Right</option>
                   </select></div>
+                  <div class="f"><label>Spacing mm</label><input id="cardSpacingMm" type="number" step="0.1" value="0"></div>
                 </div>
                 <div class="frow">
                   <div class="f"><label>X mm from centre</label><input id="cardX" type="number" step="1" value="0"></div>
                   <div class="f"><label>Y mm from centre</label><input id="cardY" type="number" step="1" value="0"></div>
                   <div class="f"><label>Margin mm</label><input id="writeMarginCard" type="number" step="0.5" value="10"></div>
+                </div>
+              </div>
+              <div class="textbox">
+                <div class="tlab">Drawing<small id="cardArtInfo">none; the message stands alone</small></div>
+                <div class="frow">
+                  <button class="btn gho grow" id="cardArtPick">Add a drawing (SVG, PNG, JPG)</button>
+                  <button class="btn gho w110 hide" id="cardArtClear">Remove</button>
+                </div>
+                <div class="frow hide" id="cardArtOpts">
+                  <div class="f"><label>Size mm</label><input id="cardArtMm" type="number" step="1" min="1" value="30"></div>
+                  <div class="f"><label>Place</label><select id="cardArtWhere"><option value="above">Above the message</option><option value="below">Below the message</option></select></div>
+                  <div class="f"><label>Gap mm</label><input id="cardArtGap" type="number" step="0.5" min="0" value="5"></div>
                 </div>
               </div>
             </div>
@@ -398,6 +435,7 @@
             <div class="h">Preview</div>
             <div class="leg"><i></i> Draw</div>
             <div class="leg tr"><i></i> Travel</div>
+            <button class="pvbtn" id="gridBtn" title="10 mm grid, with the sheet centre marked">Grid</button>
           </div>
           <div class="canvaswrap">
             <svg id="pv" class="hide" viewBox="0 0 150 100"></svg>

@@ -13,6 +13,7 @@ const DEFAULTS = {
   corner: null,          // { x, y, w, h, cx, cy, which, at }
   zeroedAt: null,        // ISO timestamp of the last PLOT_ZERO_HERE
   lastFile: null,
+  jobs: [],              // recent envelopes and cards: { id, at, name, mode, fields }
   settings: {
     margin: 10,
     minLen: 0.5,
@@ -46,16 +47,23 @@ const DEFAULTS = {
     textAlign: 'centre',
     textX: 0,           // mm from the sheet centre, Y down
     textY: 0,
+    textSpacingMm: 0,   // extra space between letters
+    showGrid: false,    // 10 mm grid on the preview
     masks: [],           // blanked regions, fractions of the source image
     // the Card tab: envelope or card, all text with a fixed place for it
     writeMode: 'envelope',
-    writeMargin: 10,       // inset of the return address; also the overflow margin
+    envMargin: 10,         // inset of the return address, and the overflow margin
+    cardMargin: 10,        // the overflow margin for a card
     envSender: '',
     envRecipient: '',
     envFont: 'EMSReadability',
     envSenderMm: 3.5,
     envRecipientMm: 5,
-    envRecipientY: 0,      // mm below the centre for the recipient block
+    envRecipientX: 0,      // nudge of the recipient block from the centre, mm
+    envRecipientY: 0,
+    envSenderX: 0,         // nudge of the sender block from its corner inset, mm
+    envSenderY: 0,
+    envSpacingMm: 0,
     cardMessage: '',
     cardFont: 'EMSReadability',
     cardSizeMm: 5,
@@ -63,6 +71,11 @@ const DEFAULTS = {
     cardAlign: 'centre',
     cardX: 0,
     cardY: 0,
+    cardSpacingMm: 0,
+    cardArt: null,         // a drawing (SVG, PNG, JPG) to go with the message
+    cardArtMm: 30,         // its longer side, mm
+    cardArtWhere: 'above', // 'above' | 'below' the message
+    cardArtGap: 5,         // mm between the drawing and the message
   },
 };
 

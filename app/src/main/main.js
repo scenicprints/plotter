@@ -6,7 +6,7 @@ const fs = require('fs');
 
 const { Machine } = require('./machine');
 const { Store } = require('./store');
-const { build, buildLayers, composeText, toGcode } = require('../core/pipeline');
+const { build, buildLayers, composeText, toGcode, toGcodeStack, fmtTime } = require('../core/pipeline');
 const SF = require('../core/strokefont');
 const CARD = require('../core/card');
 const { traceImage, pathsToSVG, tracePathsFromMask, DEFAULTS: TRACE_DEFAULTS } = require('../core/trace');
@@ -227,47 +227,191 @@ function previewOf(paths) {
 // The Card tab: an envelope (sender top-left, recipient centred) or a card
 // (one message, centred both ways). Same compose, gcode and preview as text
 // added to artwork, so dry run, the sheet check and Send all behave the same.
-function buildWritten(mode, opts) {
-  const o = { ...opts, margin: Number(opts.writeMargin ?? opts.margin) || 0 };
-  let paths, text;
-  if (mode === 'envelope') {
-    const e = CARD.envelope({
-      sender: o.envSender, recipient: o.envRecipient,
-      font: o.envFont || 'EMSReadability',
-      senderMm: Number(o.envSenderMm) || 3.5,
-      recipientMm: Number(o.envRecipientMm) || 5,
-      recipientY: Number(o.envRecipientY) || 0,
-      paperW: o.paperW, paperH: o.paperH, margin: o.margin,
-    });
-    paths = e.paths;
-    text = { mode, sender: e.sender, recipient: e.recipient };
-  } else {
-    const c = CARD.card({
-      message: o.cardMessage,
-      font: o.cardFont || 'EMSReadability',
-      sizeMm: Number(o.cardSizeMm) || 5,
-      lineMm: Number(o.cardLineMm) || 0,
-      align: o.cardAlign || 'centre',
-      x: Number(o.cardX) || 0,
-      y: Number(o.cardY) || 0,
-    });
-    paths = c.paths;
-    text = { mode, message: c.info };
-  }
-  if (!paths.length) throw new Error('nothing to write yet');
-  const r = composeText(null, paths, o);
-  const gcode = toGcode(r.paths, r.options, { name: mode, time: r.stats.time });
-  lastJob = { ...r, gcode, file: null, name: `${mode}.gcode` };
+
+const firstLine = (t) => String(t || '').split(/\r?\n/).map((x) => x.trim()).find(Boolean) || '';
+
+// Ink boxes in paper space (Y up) for the blocks the preview lets you drag,
+// from the Y-down boxes the layouts report.
+function blockOf(id, info) {
+  if (!info || !info.box) return null;
+  const b = info.box;
+  return { id, x0: b.x0, x1: b.x1, y0: -b.y1, y1: -b.y0 };
+}
+
+function writtenOptions(opts, mode) {
+  const o = { ...opts, margin: Number(mode === 'envelope' ? opts.envMargin : opts.cardMargin) || 0 };
+  o.availW = Math.max(1, o.paperW - 2 * o.margin);
+  o.availH = Math.max(1, o.paperH - 2 * o.margin);
+  return o;
+}
+
+function writtenPayload(r, stats, text, blocks, name) {
+  const gcode = lastJob.gcode;
   return {
-    stats: r.stats,
+    stats,
     trace: null,
     text,
+    blocks,
     preview: previewOf(r.paths),
     paper: { w: r.options.paperW, h: r.options.paperH, margin: r.options.margin },
-    name: lastJob.name,
+    name,
     gcodeLines: gcode.split('\n').length,
     gcodeBytes: Buffer.byteLength(gcode, 'utf8'),
   };
+}
+
+// What a recent-jobs entry remembers: everything on the Write card plus the
+// sheet it was laid out for.
+const JOB_KEYS = [
+  'writeMode', 'paperW', 'paperH',
+  'envSender', 'envRecipient', 'envFont', 'envSenderMm', 'envRecipientMm',
+  'envSenderX', 'envSenderY', 'envRecipientX', 'envRecipientY', 'envSpacingMm', 'envMargin',
+  'cardMessage', 'cardFont', 'cardSizeMm', 'cardLineMm', 'cardAlign', 'cardX', 'cardY',
+  'cardSpacingMm', 'cardMargin', 'cardArt', 'cardArtMm', 'cardArtWhere', 'cardArtGap',
+];
+
+function jobSnapshot(mode, o, label) {
+  const fields = {};
+  for (const k of JOB_KEYS) if (o[k] !== undefined) fields[k] = o[k];
+  fields.writeMode = mode;
+  return { name: `${mode === 'envelope' ? 'Envelope' : 'Card'}: ${label || '(blank)'}`.slice(0, 60), mode, fields };
+}
+
+function saveJob(job) {
+  const jobs = (store.get('jobs') || []).filter((j) => j.name !== job.name);
+  jobs.unshift({ id: Date.now().toString(36), at: new Date().toISOString(), ...job });
+  store.set('jobs', jobs.slice(0, 20));
+  return store.get('jobs');
+}
+
+function buildWritten(mode, opts) {
+  const o = writtenOptions(opts, mode);
+  if (mode === 'envelope') return buildEnvelopes(o);
+  return buildCard(o);
+}
+
+// ---- envelopes: one, or a stack of them with a pause between
+function buildEnvelopes(o) {
+  const spacingMm = Number(o.envSpacingMm) || 0;
+  const list = CARD.splitRecipients(o.envRecipient);
+  const items = list.length ? list : [''];
+  const laid = items.map((recipient) => CARD.envelope({
+    sender: o.envSender, recipient,
+    font: o.envFont || 'EMSReadability',
+    senderMm: Number(o.envSenderMm) || 3.5,
+    recipientMm: Number(o.envRecipientMm) || 5,
+    senderX: Number(o.envSenderX) || 0, senderY: Number(o.envSenderY) || 0,
+    recipientX: Number(o.envRecipientX) || 0, recipientY: Number(o.envRecipientY) || 0,
+    spacingMm,
+    paperW: o.paperW, paperH: o.paperH, margin: o.margin,
+    fitW: o.availW, fitH: o.availH,
+  }));
+  if (!laid.some((e) => e.paths.length)) throw new Error('nothing to write yet');
+  const results = laid.map((e) => (e.paths.length ? composeText(null, e.paths, o) : null));
+  const n = results.length;
+  const show = Math.min(Math.max(0, Number(o.stackIndex) || 0), n - 1);
+  const r = results[show] || results.find(Boolean);
+
+  let stats = r.stats;
+  let gcode, name;
+  if (n > 1) {
+    // The stats describe the whole stack; the preview shows one sheet of it.
+    const sum = { paths: 0, lifts: 0, drawLen: 0, travelLen: 0, seconds: 0, overflow: false };
+    for (const x of results) {
+      if (!x) continue;
+      sum.paths += x.stats.paths; sum.lifts += x.stats.lifts;
+      sum.drawLen += x.stats.drawLen; sum.travelLen += x.stats.travelLen;
+      sum.seconds += x.stats.seconds; sum.overflow = sum.overflow || x.stats.overflow;
+    }
+    stats = { ...r.stats, ...sum, time: fmtTime(sum.seconds), sheets: n };
+    gcode = toGcodeStack(
+      results.map((x, i) => ({ paths: x ? x.paths : [], label: firstLine(items[i]) })),
+      r.options, { name: `${n} envelopes`, time: stats.time });
+    name = 'envelopes.gcode';
+  } else {
+    gcode = toGcode(r.paths, r.options, { name: 'envelope', time: stats.time });
+    name = 'envelope.gcode';
+  }
+  const label = n > 1 ? `${n} envelopes, ${firstLine(items[0])}` : (firstLine(items[0]) || firstLine(o.envSender));
+  lastJob = { ...r, stats, gcode, file: null, name, job: jobSnapshot('envelope', o, label) };
+  const e = laid[show];
+  const text = { mode: 'envelope', sender: e.sender, recipient: e.recipient, stack: n, index: show };
+  const blocks = [blockOf('sender', e.sender), blockOf('recipient', e.recipient)].filter(Boolean);
+  return writtenPayload(r, stats, text, blocks, name);
+}
+
+// ---- a card: a centred message, with a drawing above or below it if asked
+function cardArtFor(file, o) {
+  const mm = Math.max(1, Number(o.cardArtMm) || 30);
+  // Fit the drawing into an mm x mm box of its own: the sheet-fitting code
+  // then does the scaling, with no margin and no rotation.
+  const base = { ...o, fit: 'fit', autoRotate: false, margin: 0, paperW: mm, paperH: mm, keepLayers: false, traceMulticolour: false };
+  let r;
+  if (isRaster(file)) {
+    const t = traceFor(file, base);
+    r = buildLayers([{ name: 'art', paths: t.paths }], base);
+  } else {
+    r = build(fs.readFileSync(file, 'utf8'), base);
+  }
+  return { paths: r.paths, w: r.stats.width, h: r.stats.height, pathCount: r.paths.length };
+}
+
+function buildCard(o) {
+  const cardX = Number(o.cardX) || 0, cardY = Number(o.cardY) || 0;
+  let art = null;
+  if (o.cardArt) {
+    try {
+      art = cardArtFor(o.cardArt, o);
+    } catch (e) {
+      throw new Error(`the drawing could not be used: ${e.message}`);
+    }
+  }
+  const gap = art ? Math.max(0, Number(o.cardArtGap) || 0) : 0;
+  const reserve = art ? art.h + gap : 0;
+  const textOpts = {
+    message: o.cardMessage,
+    font: o.cardFont || 'EMSReadability',
+    sizeMm: Number(o.cardSizeMm) || 5,
+    lineMm: Number(o.cardLineMm) || 0,
+    align: o.cardAlign || 'centre',
+    spacingMm: Number(o.cardSpacingMm) || 0,
+    x: cardX, y: cardY,
+    fitW: o.availW, fitH: Math.max(1, o.availH - reserve),
+  };
+  let c = CARD.card(textOpts);
+  if (!c.paths.length && !art) throw new Error('nothing to write yet');
+
+  // Y-down offsets of the two middles from (cardX, cardY), so the pair is
+  // centred as a group: drawing, gap, message.
+  let artMid = 0;
+  if (art && c.paths.length) {
+    const th = c.info.height;
+    const total = art.h + gap + th;
+    const above = o.cardArtWhere !== 'below';
+    const textMid = above ? total / 2 - th / 2 : -total / 2 + th / 2;
+    artMid = above ? -total / 2 + art.h / 2 : total / 2 - art.h / 2;
+    c = CARD.card({ ...textOpts, y: cardY + textMid });
+  }
+  // The drawing joins the text in Y-down space and the two are composed and
+  // ordered together, exactly like text on artwork.
+  let artBox = null;
+  const paths = c.paths.slice();
+  if (art) {
+    const down = art.paths.map((p) => p.map((q) => [q[0] + cardX, -q[1] + cardY + artMid]));
+    paths.push(...down);
+    artBox = { id: 'art', x0: cardX - art.w / 2, x1: cardX + art.w / 2, y0: -(cardY + artMid) - art.h / 2, y1: -(cardY + artMid) + art.h / 2 };
+  }
+  const r = composeText(null, paths, o);
+  const gcode = toGcode(r.paths, r.options, { name: 'card', time: r.stats.time });
+  const label = firstLine(o.cardMessage) || (art ? path.basename(o.cardArt) : '');
+  lastJob = { ...r, gcode, file: null, name: 'card.gcode', job: jobSnapshot('card', o, label) };
+  const text = {
+    mode: 'card',
+    message: c.info,
+    art: art ? { file: path.basename(o.cardArt), w: art.w, h: art.h, paths: art.pathCount } : null,
+  };
+  const blocks = [blockOf('message', c.info), artBox].filter(Boolean);
+  return writtenPayload(r, r.stats, text, blocks, 'card.gcode');
 }
 
 // ------------------------------------------------------------------ IPC
@@ -351,6 +495,18 @@ function wireIPC() {
 
   ipcMain.handle('text:fonts', guard(async () => SF.listFonts()));
 
+  // Recent envelopes and cards. One is saved whenever one is sent, or on
+  // request; picking one back puts its fields on the Write card.
+  ipcMain.handle('jobs:list', guard(async () => store.get('jobs') || []));
+  ipcMain.handle('jobs:save', guard(async () => {
+    if (!lastJob || !lastJob.job) throw new Error('write something first');
+    return saveJob(lastJob.job);
+  }));
+  ipcMain.handle('jobs:forget', guard(async (id) => {
+    store.set('jobs', (store.get('jobs') || []).filter((j) => j.id !== id));
+    return store.get('jobs');
+  }));
+
   // ---------------------------------------------------------------- build
   ipcMain.handle('plot:build', guard(async (file, settings) => {
     // Take the live lift and feeds off the machine when it is reachable, so
@@ -379,6 +535,7 @@ function wireIPC() {
       align: settings.textAlign || 'centre',
       x: Number(settings.textX) || 0,
       y: Number(settings.textY) || 0,
+      trackingMm: Number(settings.textSpacingMm) || 0,
     };
     if (!file && !wantText) throw new Error('choose some artwork, or turn on text');
 
@@ -408,11 +565,12 @@ function wireIPC() {
       r = build(src, opts);
     }
 
-    let text = null;
+    let text = null, blocks = [];
     if (wantText) {
       const paths = SF.layout(settings.textMessage, textOpts);
       const m = SF.measure(settings.textMessage, textOpts);
       r = composeText(r, paths, opts);
+      if (m.paths) blocks = [{ id: 'text', x0: m.x0, x1: m.x1, y0: -m.y1, y1: -m.y0 }];
       text = {
         font: textOpts.font,
         paths: paths.length,
@@ -421,6 +579,7 @@ function wireIPC() {
         lines: m.lines,
         sizeMm: textOpts.sizeMm,
         lineMm: m.lead,
+        missing: SF.loadFont(textOpts.font).unsupported(settings.textMessage),
       };
     }
     if (!r) throw new Error('nothing to plot');
@@ -432,6 +591,7 @@ function wireIPC() {
       stats: r.stats,
       trace,
       text,
+      blocks,
       preview: previewOf(r.paths),
       paper: { w: r.options.paperW, h: r.options.paperH, margin: r.options.margin },
       name: lastJob.name,
@@ -494,6 +654,7 @@ function wireIPC() {
       );
     }
     await machine.uploadAndStart(lastJob.name, lastJob.gcode, { start: true });
+    if (lastJob.job) saveJob(lastJob.job);
     return { name: lastJob.name };
   }));
 

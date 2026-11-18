@@ -16,6 +16,23 @@ const ui = {
   masking: false,
   sending: false,
   tab: 'plot',      // 'plot' | 'card' | 'machine' | 'settings'
+  builtFor: null,   // which of plot / card ui.built was made for
+  sentSeconds: 0,   // estimate of the job that was actually sent, for the run bar
+  wasOverflow: false,
+  grid: false,      // 10 mm grid on the preview
+  cardArt: null,    // a drawing to go with a card's message
+  stackIndex: 0,    // which envelope of a stack the preview shows
+  jobs: [],         // recent envelopes and cards
+  isEnvChange: false,
+};
+
+// Which X / Y fields a dragged preview block writes to.
+const BLOCK_FIELDS = {
+  text: ['textX', 'textY'],
+  message: ['cardX', 'cardY'],
+  art: ['cardX', 'cardY'],
+  sender: ['envSenderX', 'envSenderY'],
+  recipient: ['envRecipientX', 'envRecipientY'],
 };
 
 // Step 3 is the one card that differs between the Plot and Card tabs.
@@ -130,7 +147,11 @@ function paint(s) {
   // unzeroed pause is one for certain, and the console confirms it by name -
   // which is what keeps the panel up after Z0 is locked again.
   const penChange = s.paused && (!s.zeroed || ui.isPenChange === true);
+  // A stack of envelopes pauses with the pen still zeroed; the console line
+  // names it, and the prompt is only to load the next sheet.
+  const envChange = s.paused && s.zeroed && !penChange && ui.isEnvChange === true;
   $('penChange').classList.toggle('hide', !penChange);
+  $('envChange').classList.toggle('hide', !envChange);
   if (s.paused) {
     if (!ui.penChangeAsked) { ui.penChangeAsked = true; readPenChange(); }
     $('pcZeroed').textContent = s.zeroed
@@ -142,6 +163,7 @@ function paint(s) {
   } else {
     ui.penChangeAsked = false;
     ui.isPenChange = false;
+    ui.isEnvChange = false;
   }
 
   // ---- run bar
@@ -153,7 +175,7 @@ function paint(s) {
     $('runPct').textContent = Math.round(pct * 100) + '%';
     $('runTitle').textContent = s.paused ? 'Paused' : 'Plotting';
     $('pauseBtn').textContent = s.paused ? 'Resume' : 'Pause';
-    const est = ui.built ? ui.built.stats.seconds : 0;
+    const est = ui.sentSeconds || (ui.built ? ui.built.stats.seconds : 0);
     const left = est && pct > 0 ? est * (1 - pct) : 0;
     $('runEta').textContent = (s.printFile || '') + (left ? ` · ${mmss(left)} left` : '');
   }
@@ -269,6 +291,21 @@ function svgPoint(evt) {
 function wireMasks() {
   const svg = $('pv');
   let drag = null;
+  // Dragging a text block: the handle follows the pointer and the block's X
+  // and Y fields follow the handle, then the plot is rebuilt on release. The
+  // preview's units are millimetres with Y down, the same as the fields.
+  let bdrag = null;
+  svg.addEventListener('mousedown', (e) => {
+    if (ui.masking || !ui.built) return;
+    const el = e.target && e.target.closest ? e.target.closest('.blk') : null;
+    if (!el) return;
+    const f = BLOCK_FIELDS[el.dataset.id];
+    const p = svgPoint(e);
+    if (!f || !p) return;
+    bdrag = { el, x0: p[0], y0: p[1], f, vx: parseFloat($(f[0]).value) || 0, vy: parseFloat($(f[1]).value) || 0 };
+    el.classList.add('dragging');
+    e.preventDefault();
+  });
   svg.addEventListener('mousedown', (e) => {
     if (!ui.masking || !ui.built || !ui.built.trace) return;
     const p = svgPoint(e);
@@ -277,6 +314,15 @@ function wireMasks() {
     e.preventDefault();
   });
   svg.addEventListener('mousemove', (e) => {
+    if (bdrag) {
+      const p = svgPoint(e);
+      if (!p) return;
+      const dx = p[0] - bdrag.x0, dy = p[1] - bdrag.y0;
+      bdrag.el.setAttribute('transform', `translate(${dx} ${dy})`);
+      $(bdrag.f[0]).value = (bdrag.vx + dx).toFixed(1);
+      $(bdrag.f[1]).value = (bdrag.vy + dy).toFixed(1);
+      return;
+    }
     if (!drag) return;
     const p = svgPoint(e);
     if (!p) return;
@@ -290,6 +336,12 @@ function wireMasks() {
     }
   });
   window.addEventListener('mouseup', () => {
+    if (bdrag) {
+      bdrag.el.classList.remove('dragging');
+      bdrag = null;
+      rebuild();
+      return;
+    }
     if (!drag) return;
     const d = drag; drag = null;
     if (Math.abs(d.x1 - d.x0) < 1 || Math.abs(d.y1 - d.y0) < 1) { drawPreview(ui.built); return; }
@@ -325,14 +377,29 @@ function drawPreview(res) {
   const w = paper.w, h = paper.h, m = paper.margin;
   const d = preview.draw.map((p) => 'M' + p.map((q) => `${q[0]} ${q[1]}`).join('L')).join('');
   const t = preview.travel.map((s) => `M${s[0]} ${s[1]}L${s[2]} ${s[3]}`).join('');
+  // A 10 mm grid out from the sheet centre, which is where every coordinate
+  // in the app is measured from.
+  let grid = '';
+  if (ui.grid) {
+    let g = '';
+    for (let x = 10; x < w / 2; x += 10) g += `M${x} ${-h / 2}V${h / 2}M${-x} ${-h / 2}V${h / 2}`;
+    for (let y = 10; y < h / 2; y += 10) g += `M${-w / 2} ${y}H${w / 2}M${-w / 2} ${-y}H${w / 2}`;
+    grid = `<path class="grid" d="${g}"/><path class="axis" d="M0 ${-h / 2}V${h / 2}M${-w / 2} 0H${w / 2}"/>`;
+  }
+  // Each text block gets a handle over its ink, in SVG space (Y down), so it
+  // can be dragged. Its id says which X / Y fields it moves.
+  const blocks = (res.blocks || []).map((b) =>
+    `<rect class="blk" data-id="${b.id}" x="${b.x0}" y="${-b.y1}" width="${b.x1 - b.x0}" height="${b.y1 - b.y0}"/>`).join('');
   // Paper space has Y up; the flip puts it into SVG's Y-down viewBox.
   svg.setAttribute('viewBox', `${-w / 2} ${-h / 2} ${w} ${h}`);
   svg.innerHTML =
     `<rect class="sheet" x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}"/>`
     + `<g transform="scale(1,-1)">`
-    + `<rect class="marginbox" x="${-w / 2 + m}" y="${-h / 2 + m}" width="${w - 2 * m}" height="${h - 2 * m}"/>`
+    + grid
+    + `<rect class="marginbox${stats.overflow ? ' over' : ''}" x="${-w / 2 + m}" y="${-h / 2 + m}" width="${w - 2 * m}" height="${h - 2 * m}"/>`
     + `<path class="tv" d="${t}"/><path class="dr" d="${d}"/>`
     + `</g>`
+    + blocks
     + (res.trace && res.stats.map
       ? ui.masks.map((mk) => {
           const r = maskRectSvg(mk, res);
@@ -348,7 +415,16 @@ function drawPreview(res) {
   $('sTravel').textContent = metres(stats.travelLen);
   $('sLifts').textContent = stats.lifts;
   $('sTime').textContent = stats.time;
-  $('val' + step3()).textContent = stats.time;
+  $('val' + step3()).textContent = stats.overflow ? 'will not fit'
+    : (stats.sheets > 1 ? `${stats.sheets} envelopes, ${stats.time}` : stats.time);
+}
+
+// The fit warning is a standing state (the margin box turns red and step 3
+// says so), and the toast fires once when it starts, not on every keystroke.
+function overflowToast(res, msg) {
+  const over = !!(res && res.stats.overflow);
+  if (over && !ui.wasOverflow) toast(msg, 'err', 'It will not fit');
+  ui.wasOverflow = over;
 }
 
 function currentSettings() {
@@ -384,18 +460,26 @@ function currentSettings() {
     textAlign: $('textAlign').value || 'centre',
     textX: parseFloat($('textX').value) || 0,
     textY: parseFloat($('textY').value) || 0,
+    textSpacingMm: parseFloat($('textSpacingMm').value) || 0,
+    showGrid: ui.grid,
     masks: ui.masks,
     // the Card tab. mode tells the build which path to take; only the active
     // tab's mode is sent, so the Plot tab never builds an envelope.
     mode: ui.tab === 'card' ? writeMode() : 'art',
     writeMode: writeMode(),
-    writeMargin: parseFloat($(writeMode() === 'card' ? 'writeMarginCard' : 'writeMarginEnv').value) || 0,
+    envMargin: parseFloat($('writeMarginEnv').value) || 0,
+    cardMargin: parseFloat($('writeMarginCard').value) || 0,
     envSender: $('envSender').value,
     envRecipient: $('envRecipient').value,
     envFont: $('envFont').value || 'EMSReadability',
     envSenderMm: parseFloat($('envSenderMm').value) || 3.5,
     envRecipientMm: parseFloat($('envRecipientMm').value) || 5,
+    envRecipientX: parseFloat($('envRecipientX').value) || 0,
     envRecipientY: parseFloat($('envRecipientY').value) || 0,
+    envSenderX: parseFloat($('envSenderX').value) || 0,
+    envSenderY: parseFloat($('envSenderY').value) || 0,
+    envSpacingMm: parseFloat($('envSpacingMm').value) || 0,
+    stackIndex: ui.stackIndex,
     cardMessage: $('cardMessage').value,
     cardFont: $('cardFont').value || 'EMSReadability',
     cardSizeMm: parseFloat($('cardSizeMm').value) || 5,
@@ -403,12 +487,21 @@ function currentSettings() {
     cardAlign: $('cardAlign').value || 'centre',
     cardX: parseFloat($('cardX').value) || 0,
     cardY: parseFloat($('cardY').value) || 0,
+    cardSpacingMm: parseFloat($('cardSpacingMm').value) || 0,
+    cardArt: ui.cardArt,
+    cardArtMm: parseFloat($('cardArtMm').value) || 30,
+    cardArtWhere: $('cardArtWhere').value || 'above',
+    cardArtGap: parseFloat($('cardArtGap').value) || 0,
   };
 }
 
-const blockInfo = (b) => (b
-  ? `${b.lines} line${b.lines === 1 ? '' : 's'}, ${b.width.toFixed(1)} x ${b.height.toFixed(1)} mm, ${b.paths} strokes`
-  : 'nothing yet');
+const blockInfo = (b) => {
+  if (!b) return 'nothing yet';
+  let s = `${b.lines} line${b.lines === 1 ? '' : 's'}, ${b.width.toFixed(1)} x ${b.height.toFixed(1)} mm, ${b.paths} strokes`;
+  if (b.fitted) s += ` - shrunk to ${b.sizeMm.toFixed(1)} mm caps to fit`;
+  if (b.missing && b.missing.length) s += ` - cannot draw ${b.missing.map((c) => JSON.stringify(c)).join(' ')}`;
+  return s;
+};
 
 let buildTimer = null;
 function rebuildSoon(delay = 260) {
@@ -420,10 +513,11 @@ async function rebuild() {
   const s = currentSettings();
   API.setSettings(s);
   ui.settings = { ...ui.settings, ...s };
+  ui.builtFor = ui.tab === 'card' ? 'card' : 'plot';
   if (s.mode !== 'art') return rebuildWritten(s);
   // Text alone is a perfectly good plot, so artwork is not required.
   const hasText = s.textOn && String(s.textMessage || '').trim();
-  if (!ui.file && !hasText) { drawPreview(null); ui.built = null; return; }
+  if (!ui.file && !hasText) { drawPreview(null); ui.built = null; ui.wasOverflow = false; return; }
   const res = await call(API.buildPlot(ui.file, s), 'Could not build that artwork');
   ui.built = res;
   drawPreview(res);
@@ -431,7 +525,8 @@ async function rebuild() {
     const t = res.text;
     $('textInfo').textContent =
       `${t.lines} line${t.lines === 1 ? '' : 's'}, ${t.width.toFixed(1)} x ${t.height.toFixed(1)} mm`
-      + `, ${t.paths} strokes, ${t.lineMm.toFixed(1)} mm line pitch`;
+      + `, ${t.paths} strokes, ${t.lineMm.toFixed(1)} mm line pitch`
+      + (t.missing && t.missing.length ? ` - cannot draw ${t.missing.map((c) => JSON.stringify(c)).join(' ')}` : '');
   } else if ($('togText').classList.contains('on')) {
     $('textInfo').textContent = 'nothing to write yet';
   }
@@ -466,12 +561,9 @@ async function rebuild() {
         + `, ink ${t.inkPercent.toFixed(1)}%, fills ${t.filledPercent.toFixed(1)}% of it`
         + `, ${res.stats.paths} strokes`;
   }
-  if (res) {
-    if (res.stats.overflow) {
-      toast('The artwork is larger than the card minus the margin. Turn on "Fit to the card" or increase the margin.', 'err', 'It will not fit');
-    } else if (res.stats.rotated) {
-      toast('Rotated 90° to fill the card better. Turn off Auto-rotate to keep the original orientation.', '', 'Auto-rotated');
-    }
+  overflowToast(res, 'The artwork is larger than the card minus the margin. Turn on "Fit to the card" or increase the margin.');
+  if (res && !res.stats.overflow && res.stats.rotated) {
+    toast('Rotated 90° to fill the card better. Turn off Auto-rotate to keep the original orientation.', '', 'Auto-rotated');
   }
   if (ui.status) paint(ui.status);
 }
@@ -480,10 +572,11 @@ async function rebuild() {
 async function rebuildWritten(s) {
   const has = s.mode === 'envelope'
     ? (s.envSender.trim() || s.envRecipient.trim())
-    : s.cardMessage.trim();
+    : (s.cardMessage.trim() || s.cardArt);
   if (!has) {
-    drawPreview(null); ui.built = null;
+    drawPreview(null); ui.built = null; ui.wasOverflow = false;
     ['envSenderInfo', 'envRecipientInfo', 'cardInfo'].forEach((id) => { $(id).textContent = 'nothing yet'; });
+    $('stackNav').classList.add('hide');
     if (ui.status) paint(ui.status);
     return;
   }
@@ -495,13 +588,18 @@ async function rebuildWritten(s) {
     if (t.mode === 'envelope') {
       $('envSenderInfo').textContent = blockInfo(t.sender);
       $('envRecipientInfo').textContent = blockInfo(t.recipient);
+      const stack = t.stack > 1;
+      $('stackNav').classList.toggle('hide', !stack);
+      ui.stackIndex = t.index || 0;
+      if (stack) $('stackPos').textContent = `${t.index + 1} / ${t.stack}`;
     } else {
       $('cardInfo').textContent = blockInfo(t.message) + (t.message ? `, ${t.message.lineMm.toFixed(1)} mm line pitch` : '');
-    }
-    if (res.stats.overflow) {
-      toast('The writing reaches past the margin. Use smaller capitals, fewer lines, or a smaller margin.', 'err', 'It will not fit');
+      $('cardArtInfo').textContent = t.art
+        ? `${t.art.file}: ${t.art.w.toFixed(1)} x ${t.art.h.toFixed(1)} mm, ${t.art.paths} paths`
+        : 'none; the message stands alone';
     }
   }
+  overflowToast(res, 'The writing reaches past the margin. Use smaller capitals, fewer lines, or a smaller margin.');
   if (ui.status) paint(ui.status);
 }
 
@@ -517,7 +615,7 @@ function openCard(n) {
 // control, so every handler above works unchanged on either tab.
 function placeShared(tab) {
   const host = $('tab-' + (tab === 'card' ? 'card' : 'plot'));
-  host.prepend($('penChange'), $('restoreBanner'), $('alertBanner'), $('card1'), $('card2'));
+  host.prepend($('penChange'), $('envChange'), $('restoreBanner'), $('alertBanner'), $('card1'), $('card2'));
   const foot = $(tab === 'card' ? 'cardW' : 'card3').querySelector('.cbody');
   foot.appendChild($('sendBlock'));
 }
@@ -534,10 +632,55 @@ function showTab(tab) {
     $('pvEmpty').innerHTML = tab === 'card'
       ? 'Write in step 3 and the envelope or card appears here,<br>with travel moves shown so you can see the pen lifts.'
       : 'Choose artwork in step 3 and the plot appears here,<br>with travel moves shown so you can see the pen lifts.';
-    // The preview belongs to one tab at a time, so a switch rebuilds it.
-    if ((was === 'card') !== (tab === 'card')) rebuild();
+    // The preview belongs to one tab at a time. A build made for the other
+    // tab is not just a wrong picture: Send would upload it. So any entry
+    // whose build is not this tab's own gets a fresh one, including a return
+    // from Machine or Settings.
+    setMasking(false);
+    if (ui.builtFor !== tab) rebuild();
   }
   if (tab === 'machine') refreshConsole();
+}
+
+// ---- recent envelopes and cards
+async function refreshJobs(list) {
+  const jobs = list || (await call(API.listJobs(), 'Could not read the recent jobs')) || [];
+  ui.jobs = jobs;
+  const sel = $('jobPick');
+  sel.innerHTML = '';
+  const o0 = document.createElement('option');
+  o0.value = ''; o0.textContent = jobs.length ? 'Pick one to load it' : 'No recent jobs yet';
+  sel.appendChild(o0);
+  for (const j of jobs) {
+    const o = document.createElement('option');
+    o.value = j.id; o.textContent = j.name;
+    sel.appendChild(o);
+  }
+}
+
+function loadJob(j) {
+  const f = j.fields || {};
+  const set = (id, v) => { if (v !== undefined && v !== null) $(id).value = v; };
+  set('paperW', f.paperW); set('paperH', f.paperH); updateCentrePreview();
+  const mode = f.writeMode || j.mode || 'envelope';
+  $('writeMode').querySelectorAll('.sg').forEach((b) => b.classList.toggle('on', b.dataset.v === mode));
+  ['envSender', 'envRecipient', 'envFont', 'envSenderMm', 'envRecipientMm', 'envSenderX', 'envSenderY',
+   'envRecipientX', 'envRecipientY', 'envSpacingMm', 'cardMessage', 'cardFont', 'cardSizeMm', 'cardLineMm',
+   'cardAlign', 'cardX', 'cardY', 'cardSpacingMm', 'cardArtMm', 'cardArtWhere', 'cardArtGap'].forEach((k) => set(k, f[k]));
+  set('writeMarginEnv', f.envMargin); set('writeMarginCard', f.cardMargin);
+  setCardArt(f.cardArt || null);
+  ui.stackIndex = 0;
+  syncWriteMode();
+  rebuild();
+  toast(`${j.name} loaded. The sheet size came with it; check step 2 still matches the machine.`, 'ok', 'Recent job');
+}
+
+function setCardArt(p) {
+  ui.cardArt = p || null;
+  $('cardArtPick').textContent = p ? p.split(/[\\/]/).pop() : 'Add a drawing (SVG, PNG, JPG)';
+  $('cardArtClear').classList.toggle('hide', !p);
+  $('cardArtOpts').classList.toggle('hide', !p);
+  if (!p) $('cardArtInfo').textContent = 'none; the message stands alone';
 }
 
 function syncWriteMode() {
@@ -611,18 +754,26 @@ async function boot() {
     $('textAlign').value = s.textAlign || 'centre';
     $('textX').value = s.textX ?? 0;
     $('textY').value = s.textY ?? 0;
+    $('textSpacingMm').value = s.textSpacingMm ?? 0;
+    ui.grid = !!s.showGrid;
+    $('gridBtn').classList.toggle('on', ui.grid);
     ui.masks = Array.isArray(s.masks) ? s.masks : [];
     $('togText').classList.toggle('on', !!s.textOn);
     $('textBox').classList.toggle('hide', !s.textOn);
     // the Card tab
     $('writeMode').querySelectorAll('.sg').forEach((b) => b.classList.toggle('on', b.dataset.v === (s.writeMode || 'envelope')));
-    $('writeMarginEnv').value = $('writeMarginCard').value = s.writeMargin ?? 10;
+    $('writeMarginEnv').value = s.envMargin ?? 10;
+    $('writeMarginCard').value = s.cardMargin ?? 10;
     $('envSender').value = s.envSender || '';
     $('envRecipient').value = s.envRecipient || '';
     $('envFont').value = s.envFont || 'EMSReadability';
     $('envSenderMm').value = s.envSenderMm ?? 3.5;
     $('envRecipientMm').value = s.envRecipientMm ?? 5;
+    $('envRecipientX').value = s.envRecipientX ?? 0;
     $('envRecipientY').value = s.envRecipientY ?? 0;
+    $('envSenderX').value = s.envSenderX ?? 0;
+    $('envSenderY').value = s.envSenderY ?? 0;
+    $('envSpacingMm').value = s.envSpacingMm ?? 0;
     $('cardMessage').value = s.cardMessage || '';
     $('cardFont').value = s.cardFont || 'EMSReadability';
     $('cardSizeMm').value = s.cardSizeMm ?? 5;
@@ -630,7 +781,13 @@ async function boot() {
     $('cardAlign').value = s.cardAlign || 'centre';
     $('cardX').value = s.cardX ?? 0;
     $('cardY').value = s.cardY ?? 0;
+    $('cardSpacingMm').value = s.cardSpacingMm ?? 0;
+    $('cardArtMm').value = s.cardArtMm ?? 30;
+    $('cardArtWhere').value = s.cardArtWhere || 'above';
+    $('cardArtGap').value = s.cardArtGap ?? 5;
+    setCardArt(s.cardArt || null);
     syncWriteMode();
+    refreshJobs();
     if (st.lastFile) setFile(st.lastFile, true);
   }
   openCard(1);
@@ -675,8 +832,15 @@ async function readPenChange() {
   const r = await API.consoleLog(60);
   if (!r || !r.ok) return;
   const line = r.value.map((l) => l.message).reverse()
-    .find((m) => /PEN CHANGE/i.test(m));
+    .find((m) => /PEN CHANGE|NEXT ENVELOPE/i.test(m));
   if (!line) { $('pcWhich').textContent = 'Swap to the next pen'; return; }
+  if (/NEXT ENVELOPE/i.test(line)) {
+    ui.isEnvChange = true;
+    const e = /NEXT ENVELOPE\s+(\d+)\s+of\s+(\d+):\s*(.*?)\.\s+Load/i.exec(line);
+    $('ecWhich').textContent = e ? `Load envelope ${e[1]} of ${e[2]}: ${e[3]}` : line.slice(0, 90);
+    if (ui.status) paint(ui.status);
+    return;
+  }
   ui.isPenChange = true;
   const m = /PEN CHANGE\s+(\d+)\s+of\s+(\d+):\s*load\s+(.+?)\.\s/i.exec(`${line} `);
   $('pcWhich').textContent = m ? `Load the ${m[3]} pen  (${m[1]} of ${m[2]})` : line.slice(0, 90);
@@ -834,7 +998,7 @@ document.addEventListener('DOMContentLoaded', () => {
   toggle('togFills', () => rebuildSoon(60));
   toggle('togHatch', () => rebuildSoon(60));
   toggle('togText', (on) => { $('textBox').classList.toggle('hide', !on); rebuildSoon(60); });
-  ['textSizeMm', 'textLineMm', 'textX', 'textY'].forEach((id) =>
+  ['textSizeMm', 'textLineMm', 'textX', 'textY', 'textSpacingMm'].forEach((id) =>
     $(id).addEventListener('input', () => rebuildSoon()));
   ['textFont', 'textAlign'].forEach((id) =>
     $(id).addEventListener('change', () => rebuildSoon(60)));
@@ -850,11 +1014,43 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   ['envSender', 'envRecipient', 'cardMessage'].forEach((id) =>
     $(id).addEventListener('input', () => rebuildSoon(450)));
-  ['envSenderMm', 'envRecipientMm', 'envRecipientY', 'writeMarginEnv',
-   'cardSizeMm', 'cardLineMm', 'cardX', 'cardY', 'writeMarginCard'].forEach((id) =>
+  ['envSenderMm', 'envRecipientMm', 'envRecipientX', 'envRecipientY', 'envSenderX', 'envSenderY',
+   'envSpacingMm', 'writeMarginEnv', 'cardSizeMm', 'cardLineMm', 'cardX', 'cardY', 'cardSpacingMm',
+   'writeMarginCard', 'cardArtMm', 'cardArtGap'].forEach((id) =>
     $(id).addEventListener('input', () => rebuildSoon()));
-  ['envFont', 'cardFont', 'cardAlign'].forEach((id) =>
+  ['envFont', 'cardFont', 'cardAlign', 'cardArtWhere'].forEach((id) =>
     $(id).addEventListener('change', () => rebuildSoon(60)));
+  // a stack of envelopes: which one the preview shows
+  $('stackPrev').addEventListener('click', () => { ui.stackIndex = Math.max(0, ui.stackIndex - 1); rebuild(); });
+  $('stackNext').addEventListener('click', () => { ui.stackIndex += 1; rebuild(); });
+  $('ecResume').addEventListener('click', async () => {
+    const s2 = await call(API.resume(), 'Could not resume');
+    if (s2) paint(s2);
+  });
+  // the drawing on a card
+  $('cardArtPick').addEventListener('click', async () => {
+    const p = await call(API.pickFile(), 'Could not open that');
+    if (p) { setCardArt(p); rebuild(); }
+  });
+  $('cardArtClear').addEventListener('click', () => { setCardArt(null); rebuild(); });
+  // recents
+  $('jobPick').addEventListener('change', () => {
+    const j = ui.jobs.find((x) => x.id === $('jobPick').value);
+    $('jobPick').value = '';
+    if (j) loadJob(j);
+  });
+  $('jobSave').addEventListener('click', async () => {
+    if (ui.tab !== 'card' || !ui.built) { toast('Write something first.', 'err'); return; }
+    const list = await call(API.saveJob(), 'Could not save');
+    if (list) { refreshJobs(list); toast('Kept in the Recent list.', 'ok', 'Saved'); }
+  });
+  // the preview grid
+  $('gridBtn').addEventListener('click', () => {
+    ui.grid = !ui.grid;
+    $('gridBtn').classList.toggle('on', ui.grid);
+    API.setSettings({ showGrid: ui.grid });
+    if (ui.built) drawPreview(ui.built);
+  });
 
   wireMasks();
   $('maskAdd').addEventListener('click', () => {
@@ -882,8 +1078,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const r = await call(API.send(), 'Could not start the plot');
     ui.sending = false;
     if (r) {
+      ui.sentSeconds = ui.built.stats.seconds;
       toast(`${r.name} uploaded and started.`, 'ok',
-        ui.built.dryRun ? 'Dry run, nothing is being drawn' : 'Plotting');
+        ui.built.stats.dryRun ? 'Dry run, nothing is being drawn' : 'Plotting');
     }
   });
   $('saveGcode').addEventListener('click', async () => {

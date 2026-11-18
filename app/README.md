@@ -123,6 +123,41 @@ centre, and more lines grow evenly up and down. Centring uses cap height and
 baselines, not descenders, so a line ending in "y" does not nudge the block.
 Blank lines around the message are ignored; one in the middle is spacing.
 
+Both modes **shrink to fit**: if a block's ink is wider or taller than the
+card minus the margin, the cap height comes down until it fits, and the info
+line under the box says so. Each mode keeps its own margin.
+
+Pasted text is normalised per font: a curly apostrophe or an ellipsis that a
+font lacks becomes the straight form, an accented letter loses its accent only
+when the font has no glyph for it, and anything still undrawable is named in
+the info line rather than silently leaving a hole in the word. The same
+report appears under the Plot tab's "Add text" box.
+
+**A stack of envelopes.** Several recipients in the Recipient box, separated
+by a blank line, become one job with one envelope each. Between envelopes the
+pen lifts clear and the machine pauses with a message the app reads back,
+exactly as a pen change does, except that the pen is the same so the Z
+reference is kept: load the next envelope at the same corner and continue.
+The preview shows one envelope at a time (arrows beside "Recipient"), the
+stats and the estimate are for the whole stack, and a dry run flies them all
+without stopping.
+
+**A drawing on the card.** Add an SVG or a line drawing to a card and it is
+fitted to a size in millimetres and placed above or below the message with a
+gap; the pair is centred as one group. The message's fit box shrinks by the
+drawing's height so the two never overlap.
+
+**Drag to place.** Every text block (the Plot tab's message, the card's
+message and drawing, the envelope's sender and recipient) has a handle on the
+preview. Drag it and its X / Y fields follow; the plot rebuilds on release.
+Each has a letter-spacing field as well, and the preview has a 10 mm grid
+toggle marked out from the sheet centre.
+
+**Recent jobs.** Whatever is sent from the Card tab is kept in a Recent list
+(twenty entries, in the app's state file), along with anything you save by
+hand. Picking one puts its text, font, sizes, nudges, drawing and sheet size
+back on the Write card.
+
 The layout lives in `src/core/card.js` (tested by `test-card.js`) and goes
 through the same compose, gcode, preview and sheet check as text on artwork,
 so dry run and Send behave exactly as they do for a drawing.

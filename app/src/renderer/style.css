@@ -195,6 +195,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 #pv{max-width:100%;max-height:100%;box-shadow:0 14px 34px -18px #000;border-radius:2px}
 #pv .sheet{fill:var(--paper)}
 #pv .marginbox{fill:none;stroke:#D8CFC0;stroke-width:.3;stroke-dasharray:2 2}
+#pv .marginbox.over{stroke:var(--danger);stroke-width:.6;stroke-dasharray:1.5 1}
 #pv .dr{fill:none;stroke:var(--ink);stroke-width:.45;stroke-linecap:round;stroke-linejoin:round}
 #pv .tv{fill:none;stroke:var(--travel);stroke-width:.22;stroke-dasharray:.9 1.1}
 .empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:13px;text-align:center;padding:24px}
@@ -279,3 +280,21 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .sg+.sg{border-left:1px solid var(--line2)}
 .sg:hover{color:var(--text)}
 .sg.on{background:var(--ac);color:#181613}
+
+/* ---- preview extras: grid, draggable blocks ---- */
+.pvbtn{height:26px;padding:0 10px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);
+  color:var(--dim);font-size:11.5px;font-weight:600;transition:.13s}
+.pvbtn:hover{color:var(--text)}
+.pvbtn.on{background:var(--a2);color:#181613;border-color:var(--a2)}
+#pv .grid{fill:none;stroke:#DDD5C6;stroke-width:.15}
+#pv .axis{fill:none;stroke:#CFC5B3;stroke-width:.3}
+#pv .blk{fill:transparent;stroke:transparent;stroke-width:1.2;cursor:move;vector-effect:non-scaling-stroke}
+#pv .blk:hover,#pv .blk.dragging{stroke:var(--a2);stroke-dasharray:4 3}
+#pv.masking .blk{pointer-events:none}
+
+/* ---- a stack of envelopes: which one the preview shows ---- */
+.stacknav{display:inline-flex;align-items:center;gap:6px;margin-left:10px;vertical-align:middle}
+.stacknav button{width:22px;height:20px;border-radius:5px;border:1px solid var(--line2);background:var(--panel);
+  color:var(--dim);font-size:14px;line-height:1;padding:0}
+.stacknav button:hover{color:var(--text)}
+.stacknav b{font-family:var(--mono);font-size:11px;color:var(--text);letter-spacing:0;text-transform:none}

@@ -49,6 +49,9 @@ contextBridge.exposeInMainWorld('plotter', {
   saveGcode: () => call('plot:saveGcode'),
   saveTracedSvg: () => call('plot:saveSvg'),
   listFonts: () => call('text:fonts'),
+  listJobs: () => call('jobs:list'),
+  saveJob: () => call('jobs:save'),
+  forgetJob: (id) => call('jobs:forget', id),
 
   // running
   send: () => call('plot:send'),

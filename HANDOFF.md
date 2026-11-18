@@ -222,6 +222,15 @@ nudge) or Card (message centred both ways, growing evenly from the middle).
 Layout is `app/src/core/card.js`; the build path is `buildWritten` in
 `main.js`; `test-card.js` pins the geometry.
 
+Same day, after review: blocks shrink to fit, pasted punctuation is
+normalised per font, blocks can be dragged on the preview, a card can carry a
+drawing above or below the message, recent jobs are kept, and several
+recipients separated by a blank line plot as a **stack of envelopes**. The
+stack pauses between sheets with `RESPOND MSG="NEXT ENVELOPE i of n: ..."`
+then `PAUSE`, which the app reads from the console exactly like PEN CHANGE;
+the Z reference is kept because the pen is the same. `toGcodeStack` in
+`pipeline.js` emits it; no new machine macro is needed.
+
 ### Going faster
 
 Pen lifts dominate, ~1.0 s each at the live lift 10 / feeds 1800/900.
