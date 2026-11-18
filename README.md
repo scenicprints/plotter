@@ -50,6 +50,12 @@ linemerge, linesort, reloop, simplify, filter, layout, gcode. It also traces
 PNG and JPG line art itself, splitting ink by thickness so thin strokes get
 their centreline and solid shapes get an outline plus a hatch.
 
+### Getting it
+
+The built app is on the **Releases** page of this repository: download
+`Plotter.exe` from the latest release and run it. One portable file, nothing
+to install.
+
 ### Building it
 
     cd app
@@ -57,4 +63,5 @@ their centreline and solid shapes get an outline plus a hatch.
     npm test
     npm run dist        # -> app/dist/Plotter.exe
 
-`app/dist/` and `app/node_modules/` are not tracked.
+`app/dist/` and `app/node_modules/` are not tracked; each release carries the
+exe built from its tagged commit.

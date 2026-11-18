@@ -170,8 +170,10 @@ apply to images. See below.
 
 ## The Windows app is BUILT
 
-`app/dist/Plotter.exe` - one portable file, 89 MB,
-no install, no Python. Source and full notes in `app/README.md`.
+`app/dist/Plotter.exe` - one portable file, about 93 MB,
+no install, no Python. Source and full notes in `app/README.md`. The built
+exe is published on the repository's Releases page with each version tag
+(v1.3.0 was the first), since `app/dist/` is not tracked.
 Electron, matching MZ Forge and Anvil.
 
 It replaces `plot` + vpype entirely for day to day use. The Pi stays plain

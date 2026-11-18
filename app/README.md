@@ -4,7 +4,7 @@ Windows control app for the CR-6 SE pen plotter. One portable `.exe`, no Python,
 no vpype, no dependencies on the machine side. It talks to plain Klipper +
 Moonraker, so it works against any Klipper plotter, not just this one.
 
-    dist\Plotter.exe
+    dist\Plotter.exe        # built here, or downloaded from the repo's Releases page
 
 ## What it does
 
