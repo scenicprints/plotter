@@ -272,3 +272,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
 #pv .mask.drag{fill-opacity:.10}
 #pv.masking{cursor:crosshair}
 .btn.act{border-color:var(--ac);color:var(--ac)}
+
+/* ---- the Card tab's envelope / card switch ---- */
+.seg{display:flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;margin-bottom:13px}
+.sg{flex:1;height:36px;border:0;background:var(--bg);color:var(--dim);font-size:13px;font-weight:650;transition:.13s}
+.sg+.sg{border-left:1px solid var(--line2)}
+.sg:hover{color:var(--text)}
+.sg.on{background:var(--ac);color:#181613}

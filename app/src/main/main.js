@@ -8,6 +8,7 @@ const { Machine } = require('./machine');
 const { Store } = require('./store');
 const { build, buildLayers, composeText, toGcode } = require('../core/pipeline');
 const SF = require('../core/strokefont');
+const CARD = require('../core/card');
 const { traceImage, pathsToSVG, tracePathsFromMask, DEFAULTS: TRACE_DEFAULTS } = require('../core/trace');
 const { separate } = require('../core/colours');
 const { isRaster, loadBitmap, plannedWidthMm, RASTER_EXT } = require('./raster');
@@ -222,6 +223,53 @@ function previewOf(paths) {
   return { draw, travel };
 }
 
+// ------------------------------------------------------------------ written
+// The Card tab: an envelope (sender top-left, recipient centred) or a card
+// (one message, centred both ways). Same compose, gcode and preview as text
+// added to artwork, so dry run, the sheet check and Send all behave the same.
+function buildWritten(mode, opts) {
+  const o = { ...opts, margin: Number(opts.writeMargin ?? opts.margin) || 0 };
+  let paths, text;
+  if (mode === 'envelope') {
+    const e = CARD.envelope({
+      sender: o.envSender, recipient: o.envRecipient,
+      font: o.envFont || 'EMSReadability',
+      senderMm: Number(o.envSenderMm) || 3.5,
+      recipientMm: Number(o.envRecipientMm) || 5,
+      recipientY: Number(o.envRecipientY) || 0,
+      paperW: o.paperW, paperH: o.paperH, margin: o.margin,
+    });
+    paths = e.paths;
+    text = { mode, sender: e.sender, recipient: e.recipient };
+  } else {
+    const c = CARD.card({
+      message: o.cardMessage,
+      font: o.cardFont || 'EMSReadability',
+      sizeMm: Number(o.cardSizeMm) || 5,
+      lineMm: Number(o.cardLineMm) || 0,
+      align: o.cardAlign || 'centre',
+      x: Number(o.cardX) || 0,
+      y: Number(o.cardY) || 0,
+    });
+    paths = c.paths;
+    text = { mode, message: c.info };
+  }
+  if (!paths.length) throw new Error('nothing to write yet');
+  const r = composeText(null, paths, o);
+  const gcode = toGcode(r.paths, r.options, { name: mode, time: r.stats.time });
+  lastJob = { ...r, gcode, file: null, name: `${mode}.gcode` };
+  return {
+    stats: r.stats,
+    trace: null,
+    text,
+    preview: previewOf(r.paths),
+    paper: { w: r.options.paperW, h: r.options.paperH, margin: r.options.margin },
+    name: lastJob.name,
+    gcodeLines: gcode.split('\n').length,
+    gcodeBytes: Buffer.byteLength(gcode, 'utf8'),
+  };
+}
+
 // ------------------------------------------------------------------ IPC
 function wireIPC() {
   ipcMain.handle('state:get', guard(async () => store.get()));
@@ -305,7 +353,6 @@ function wireIPC() {
 
   // ---------------------------------------------------------------- build
   ipcMain.handle('plot:build', guard(async (file, settings) => {
-    if (!file) throw new Error('choose some artwork first');
     // Take the live lift and feeds off the machine when it is reachable, so
     // the estimate matches reality instead of a stale config on this laptop.
     const live = machine.last;
@@ -315,6 +362,12 @@ function wireIPC() {
       zUpFeed: live?.zUpFeed ?? 1800,
       zDownFeed: live?.zDownFeed ?? 900,
     };
+
+    // An envelope or a card is all text with a fixed place for it, so it
+    // never touches the artwork path: no file, no trace, no fit.
+    if (settings && (settings.mode === 'envelope' || settings.mode === 'card')) {
+      return buildWritten(settings.mode, opts);
+    }
 
     // Text is optional and can stand alone: a card that is only a message is
     // a perfectly good plot, so artwork is not required when there is text.
@@ -466,6 +519,12 @@ function smokeTest() {
           await win.webContents.executeJavaScript(
             `document.querySelector(${JSON.stringify(process.env.PLOTTER_SMOKE_CLICK)}).click()`);
           await new Promise((r) => setTimeout(r, 600));
+        }
+        // A script file to run in the page before the capture, for driving a
+        // tab into a state worth looking at (type a message, pick a mode).
+        if (process.env.PLOTTER_SMOKE_JS) {
+          await win.webContents.executeJavaScript(fs.readFileSync(process.env.PLOTTER_SMOKE_JS, 'utf8'));
+          await new Promise((r) => setTimeout(r, 1200));
         }
         const img = await win.webContents.capturePage();
         const out = process.env.PLOTTER_SMOKE_OUT || 'smoke.png';

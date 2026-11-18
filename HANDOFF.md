@@ -213,6 +213,15 @@ or alone.
 ("Blank an area", drag on the preview). Rendered type traces into broken
 letters and no setting fixes it.
 
+### And it does envelopes and cards (2026-11-18, 1.3.0)
+
+A **Card** tab in the rail. Steps 1 and 2 are the Plot tab's own cards moved
+across (same ids, same handlers), so the setup is set once. Step 3 is
+Envelope (sender top-left inset by the margin, recipient centred with a Y
+nudge) or Card (message centred both ways, growing evenly from the middle).
+Layout is `app/src/core/card.js`; the build path is `buildWritten` in
+`main.js`; `test-card.js` pins the geometry.
+
 ### Going faster
 
 Pen lifts dominate, ~1.0 s each at the live lift 10 / feeds 1800/900.

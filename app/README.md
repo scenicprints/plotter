@@ -104,6 +104,29 @@ looking for a skeleton. Erase it and set the words again.
 Tracing a big drawing takes a second or two, so the result is cached against
 everything that actually changes it. Feeds and dry run do not re-trace.
 
+## Envelopes and cards
+
+The **Card** tab (envelope icon in the rail) is for the two jobs that are all
+text with a fixed place for it. Steps 1 and 2 are the same cards as the Plot
+tab, moved across rather than duplicated: the writing height and the sheet
+corner are one physical setup whichever tab is open. Only step 3 differs.
+
+**Envelope.** Two boxes, sender and recipient, each with its own cap height
+and one font for both. The sender is left-aligned in the top-left corner,
+inset by the margin. The recipient is centred on the envelope, with a Y nudge
+to drop it toward the lower half when a long return address wants the room.
+
+**Card.** One message, centred both ways. The plain "Add text" box on the Plot
+tab anchors the *first baseline*, so a message grows downward from wherever it
+is put. A card anchors the block's *middle* instead: one line sits dead
+centre, and more lines grow evenly up and down. Centring uses cap height and
+baselines, not descenders, so a line ending in "y" does not nudge the block.
+Blank lines around the message are ignored; one in the middle is spacing.
+
+The layout lives in `src/core/card.js` (tested by `test-card.js`) and goes
+through the same compose, gcode, preview and sheet check as text on artwork,
+so dry run and Send behave exactly as they do for a drawing.
+
 ## The SVG pipeline is in-process
 
 `src/core/` reimplements what `plot` + vpype did on the Pi:
@@ -115,6 +138,7 @@ everything that actually changes it. Feeds and dry run do not re-trace.
 | `svgdoc.js` | shapes, transforms, units, viewBox, layers -> polylines in mm |
 | `trace.js` | raster -> paths: threshold, fill split, thinning, hatch |
 | `strokefont.js` | SVG stroke fonts -> typeset paths in mm |
+| `card.js` | envelope (sender / recipient) and centred-card layouts |
 | `geom.js` | simplify, merge, spatial-grid nearest neighbour, sort, reloop |
 | `pipeline.js` | fit, auto-rotate, order, gcode, time estimate |
 

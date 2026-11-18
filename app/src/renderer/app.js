@@ -15,6 +15,14 @@ const ui = {
   masks: [],
   masking: false,
   sending: false,
+  tab: 'plot',      // 'plot' | 'card' | 'machine' | 'settings'
+};
+
+// Step 3 is the one card that differs between the Plot and Card tabs.
+const step3 = () => (ui.tab === 'card' ? 'W' : 3);
+const writeMode = () => {
+  const on = $('writeMode').querySelector('.sg.on');
+  return on ? on.dataset.v : 'envelope';
 };
 
 // ------------------------------------------------------------------ toasts
@@ -309,6 +317,8 @@ function drawPreview(res) {
     svg.classList.add('hide');
     $('pvEmpty').classList.remove('hide');
     ['sPaths', 'sDraw', 'sTravel', 'sLifts', 'sTime'].forEach((k) => { $(k).textContent = '--'; });
+    $('val3').textContent = 'no artwork';
+    $('valW').textContent = 'nothing yet';
     return;
   }
   const { preview, paper, stats } = res;
@@ -338,7 +348,7 @@ function drawPreview(res) {
   $('sTravel').textContent = metres(stats.travelLen);
   $('sLifts').textContent = stats.lifts;
   $('sTime').textContent = stats.time;
-  $('val3').textContent = stats.time;
+  $('val' + step3()).textContent = stats.time;
 }
 
 function currentSettings() {
@@ -375,8 +385,30 @@ function currentSettings() {
     textX: parseFloat($('textX').value) || 0,
     textY: parseFloat($('textY').value) || 0,
     masks: ui.masks,
+    // the Card tab. mode tells the build which path to take; only the active
+    // tab's mode is sent, so the Plot tab never builds an envelope.
+    mode: ui.tab === 'card' ? writeMode() : 'art',
+    writeMode: writeMode(),
+    writeMargin: parseFloat($(writeMode() === 'card' ? 'writeMarginCard' : 'writeMarginEnv').value) || 0,
+    envSender: $('envSender').value,
+    envRecipient: $('envRecipient').value,
+    envFont: $('envFont').value || 'EMSReadability',
+    envSenderMm: parseFloat($('envSenderMm').value) || 3.5,
+    envRecipientMm: parseFloat($('envRecipientMm').value) || 5,
+    envRecipientY: parseFloat($('envRecipientY').value) || 0,
+    cardMessage: $('cardMessage').value,
+    cardFont: $('cardFont').value || 'EMSReadability',
+    cardSizeMm: parseFloat($('cardSizeMm').value) || 5,
+    cardLineMm: parseFloat($('cardLineMm').value) || 0,
+    cardAlign: $('cardAlign').value || 'centre',
+    cardX: parseFloat($('cardX').value) || 0,
+    cardY: parseFloat($('cardY').value) || 0,
   };
 }
+
+const blockInfo = (b) => (b
+  ? `${b.lines} line${b.lines === 1 ? '' : 's'}, ${b.width.toFixed(1)} x ${b.height.toFixed(1)} mm, ${b.paths} strokes`
+  : 'nothing yet');
 
 let buildTimer = null;
 function rebuildSoon(delay = 260) {
@@ -388,6 +420,7 @@ async function rebuild() {
   const s = currentSettings();
   API.setSettings(s);
   ui.settings = { ...ui.settings, ...s };
+  if (s.mode !== 'art') return rebuildWritten(s);
   // Text alone is a perfectly good plot, so artwork is not required.
   const hasText = s.textOn && String(s.textMessage || '').trim();
   if (!ui.file && !hasText) { drawPreview(null); ui.built = null; return; }
@@ -443,10 +476,74 @@ async function rebuild() {
   if (ui.status) paint(ui.status);
 }
 
+// The Card tab: an envelope or a card, with no artwork involved at all.
+async function rebuildWritten(s) {
+  const has = s.mode === 'envelope'
+    ? (s.envSender.trim() || s.envRecipient.trim())
+    : s.cardMessage.trim();
+  if (!has) {
+    drawPreview(null); ui.built = null;
+    ['envSenderInfo', 'envRecipientInfo', 'cardInfo'].forEach((id) => { $(id).textContent = 'nothing yet'; });
+    if (ui.status) paint(ui.status);
+    return;
+  }
+  const res = await call(API.buildPlot(null, s), 'Could not lay that out');
+  ui.built = res;
+  drawPreview(res);
+  if (res && res.text) {
+    const t = res.text;
+    if (t.mode === 'envelope') {
+      $('envSenderInfo').textContent = blockInfo(t.sender);
+      $('envRecipientInfo').textContent = blockInfo(t.recipient);
+    } else {
+      $('cardInfo').textContent = blockInfo(t.message) + (t.message ? `, ${t.message.lineMm.toFixed(1)} mm line pitch` : '');
+    }
+    if (res.stats.overflow) {
+      toast('The writing reaches past the margin. Use smaller capitals, fewer lines, or a smaller margin.', 'err', 'It will not fit');
+    }
+  }
+  if (ui.status) paint(ui.status);
+}
+
 // ------------------------------------------------------------------ wiring
 function openCard(n) {
   ui.open = n;
-  [1, 2, 3].forEach((i) => $('card' + i).classList.toggle('open', i === n));
+  [1, 2, 3, 'W'].forEach((i) => $('card' + i).classList.toggle('open', i === n));
+}
+
+// Steps 1 and 2 and the banners are one set of elements that live in
+// whichever of the Plot and Card tabs is showing, and so is the Dry run /
+// Send block at the foot of step 3. Moving them keeps one id for each
+// control, so every handler above works unchanged on either tab.
+function placeShared(tab) {
+  const host = $('tab-' + (tab === 'card' ? 'card' : 'plot'));
+  host.prepend($('penChange'), $('restoreBanner'), $('alertBanner'), $('card1'), $('card2'));
+  const foot = $(tab === 'card' ? 'cardW' : 'card3').querySelector('.cbody');
+  foot.appendChild($('sendBlock'));
+}
+
+function showTab(tab) {
+  const was = ui.tab;
+  ui.tab = tab;
+  document.querySelectorAll('.rtab').forEach((x) => x.classList.toggle('on', x.dataset.tab === tab));
+  ['plot', 'card', 'machine', 'settings'].forEach((t) => $('tab-' + t).classList.toggle('hide', t !== tab));
+  if (tab === 'plot' || tab === 'card') {
+    placeShared(tab);
+    // Step 3 means a different card on each tab; carry the open state across.
+    if (ui.open === 3 || ui.open === 'W') openCard(step3());
+    $('pvEmpty').innerHTML = tab === 'card'
+      ? 'Write in step 3 and the envelope or card appears here,<br>with travel moves shown so you can see the pen lifts.'
+      : 'Choose artwork in step 3 and the plot appears here,<br>with travel moves shown so you can see the pen lifts.';
+    // The preview belongs to one tab at a time, so a switch rebuilds it.
+    if ((was === 'card') !== (tab === 'card')) rebuild();
+  }
+  if (tab === 'machine') refreshConsole();
+}
+
+function syncWriteMode() {
+  const m = writeMode();
+  $('envBox').classList.toggle('hide', m !== 'envelope');
+  $('cardBox').classList.toggle('hide', m !== 'card');
 }
 
 function chipGroup(el, onPick) {
@@ -498,11 +595,13 @@ async function boot() {
     // fonts come from the main process, so fill the picker before selecting
     const fonts = await call(API.listFonts(), 'Could not read the fonts');
     if (fonts) {
-      $('textFont').innerHTML = '';
-      for (const f of fonts) {
-        const o = document.createElement('option');
-        o.value = f.id; o.textContent = f.name;
-        $('textFont').appendChild(o);
+      for (const id of ['textFont', 'envFont', 'cardFont']) {
+        $(id).innerHTML = '';
+        for (const f of fonts) {
+          const o = document.createElement('option');
+          o.value = f.id; o.textContent = f.name;
+          $(id).appendChild(o);
+        }
       }
     }
     $('textMessage').value = s.textMessage || '';
@@ -515,6 +614,23 @@ async function boot() {
     ui.masks = Array.isArray(s.masks) ? s.masks : [];
     $('togText').classList.toggle('on', !!s.textOn);
     $('textBox').classList.toggle('hide', !s.textOn);
+    // the Card tab
+    $('writeMode').querySelectorAll('.sg').forEach((b) => b.classList.toggle('on', b.dataset.v === (s.writeMode || 'envelope')));
+    $('writeMarginEnv').value = $('writeMarginCard').value = s.writeMargin ?? 10;
+    $('envSender').value = s.envSender || '';
+    $('envRecipient').value = s.envRecipient || '';
+    $('envFont').value = s.envFont || 'EMSReadability';
+    $('envSenderMm').value = s.envSenderMm ?? 3.5;
+    $('envRecipientMm').value = s.envRecipientMm ?? 5;
+    $('envRecipientY').value = s.envRecipientY ?? 0;
+    $('cardMessage').value = s.cardMessage || '';
+    $('cardFont').value = s.cardFont || 'EMSReadability';
+    $('cardSizeMm').value = s.cardSizeMm ?? 5;
+    $('cardLineMm').value = s.cardLineMm ?? 0;
+    $('cardAlign').value = s.cardAlign || 'centre';
+    $('cardX').value = s.cardX ?? 0;
+    $('cardY').value = s.cardY ?? 0;
+    syncWriteMode();
     if (st.lastFile) setFile(st.lastFile, true);
   }
   openCard(1);
@@ -582,17 +698,11 @@ async function refreshConsole() {
 
 document.addEventListener('DOMContentLoaded', () => {
   // rail
-  document.querySelectorAll('.rtab').forEach((b) => b.addEventListener('click', () => {
-    document.querySelectorAll('.rtab').forEach((x) => x.classList.remove('on'));
-    b.classList.add('on');
-    ['plot', 'machine', 'settings'].forEach((t) => {
-      $('tab-' + t).classList.toggle('hide', t !== b.dataset.tab);
-    });
-    if (b.dataset.tab === 'machine') refreshConsole();
-  }));
+  document.querySelectorAll('.rtab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  placeShared('plot');
 
   document.querySelectorAll('.chead').forEach((b) => {
-    if (b.dataset.open) b.addEventListener('click', () => openCard(+b.dataset.open));
+    if (b.dataset.open) b.addEventListener('click', () => openCard(b.dataset.open === 'W' ? 'W' : +b.dataset.open));
   });
 
   chipGroup($('zSteps'), (b) => { ui.zStep = parseFloat(b.dataset.v); });
@@ -681,7 +791,7 @@ document.addEventListener('DOMContentLoaded', () => {
       savedCorner = r.corner;
       paint(r.status);
       toast(`Sheet centre at X${fmt(r.corner.cx)} Y${fmt(r.corner.cy)}, card ${fmt(w)} × ${fmt(h)}.`, 'ok', 'Origin set');
-      openCard(3);
+      openCard(step3());
       rebuild();
     }
   });
@@ -730,6 +840,22 @@ document.addEventListener('DOMContentLoaded', () => {
     $(id).addEventListener('change', () => rebuildSoon(60)));
   // Typing should not rebuild on every keystroke of a five-line message.
   $('textMessage').addEventListener('input', () => rebuildSoon(450));
+  // --- the Card tab
+  $('writeMode').addEventListener('click', (e) => {
+    const b = e.target.closest('.sg');
+    if (!b) return;
+    $('writeMode').querySelectorAll('.sg').forEach((x) => x.classList.toggle('on', x === b));
+    syncWriteMode();
+    rebuildSoon(60);
+  });
+  ['envSender', 'envRecipient', 'cardMessage'].forEach((id) =>
+    $(id).addEventListener('input', () => rebuildSoon(450)));
+  ['envSenderMm', 'envRecipientMm', 'envRecipientY', 'writeMarginEnv',
+   'cardSizeMm', 'cardLineMm', 'cardX', 'cardY', 'writeMarginCard'].forEach((id) =>
+    $(id).addEventListener('input', () => rebuildSoon()));
+  ['envFont', 'cardFont', 'cardAlign'].forEach((id) =>
+    $(id).addEventListener('change', () => rebuildSoon(60)));
+
   wireMasks();
   $('maskAdd').addEventListener('click', () => {
     if (!ui.built || !ui.built.trace) { toast('Blanking applies to a traced drawing, so choose an image first.', 'err'); return; }
@@ -745,7 +871,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   $('sendPlot').addEventListener('click', async () => {
-    if (!ui.built) { toast('Choose some artwork first.', 'err'); return; }
+    if (!ui.built) { toast(ui.tab === 'card' ? 'Write something first.' : 'Choose some artwork first.', 'err'); return; }
     const pre = await call(API.preflight(), 'Preflight failed');
     if (pre && !pre.ok) {
       toast(pre.problems.join('. ') + '.', 'err', 'Not ready to plot');

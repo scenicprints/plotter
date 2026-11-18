@@ -47,6 +47,22 @@ const DEFAULTS = {
     textX: 0,           // mm from the sheet centre, Y down
     textY: 0,
     masks: [],           // blanked regions, fractions of the source image
+    // the Card tab: envelope or card, all text with a fixed place for it
+    writeMode: 'envelope',
+    writeMargin: 10,       // inset of the return address; also the overflow margin
+    envSender: '',
+    envRecipient: '',
+    envFont: 'EMSReadability',
+    envSenderMm: 3.5,
+    envRecipientMm: 5,
+    envRecipientY: 0,      // mm below the centre for the recipient block
+    cardMessage: '',
+    cardFont: 'EMSReadability',
+    cardSizeMm: 5,
+    cardLineMm: 0,
+    cardAlign: 'centre',
+    cardX: 0,
+    cardY: 0,
   },
 };
 
